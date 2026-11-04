@@ -619,6 +619,12 @@ final class UnsitModel: ObservableObject {
         refreshSteps()
     }
 
+    /// A fresh private code. The shortcut's URL has to change with it.
+    func makeNewRelayCode() {
+        relayCode = Self.newRelayCode()
+        refreshSteps()
+    }
+
     /// Takes the code from another Mac, so both read the same steps.
     func useRelayCode(_ entered: String) {
         let code = Self.normalizedRelayCode(entered)
@@ -635,8 +641,13 @@ final class UnsitModel: ObservableObject {
         return normalizedRelayCode(raw)
     }
 
+    /// Accepts the code, the ntfy name ("unsit-…") or the whole URL, and returns the code in groups of four.
     static func normalizedRelayCode(_ s: String) -> String {
-        let chars = s.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        var text = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let slash = text.range(of: "/", options: .backwards) { text = String(text[slash.upperBound...]) }
+        if let query = text.firstIndex(of: "?") { text = String(text[..<query]) }
+        if text.hasPrefix("unsit-") { text = String(text.dropFirst("unsit-".count)) }
+        let chars = text.filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
         var groups: [String] = []
         var current = ""
         for c in chars {
@@ -648,7 +659,7 @@ final class UnsitModel: ObservableObject {
     }
 
     static func isValidRelayCode(_ s: String) -> Bool {
-        let chars = s.filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        let chars = normalizedRelayCode(s).filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
         return chars.count >= 16 && chars.count <= 40
     }
 
@@ -2137,7 +2148,13 @@ struct RelayCodeSheet: View {
             }
             .padding(.top, 6)
 
-            Text("Already have a code on another Mac? Use that one here.")
+            Button("New code") { model.makeNewRelayCode() }
+                .buttonStyle(.link)
+                .font(.system(size: 12))
+                .help("Makes a new private code. Change the URL in the shortcut afterwards.")
+                .padding(.top, 4)
+
+            Text("Already have a code on another Mac? Paste the code or the whole URL.")
                 .font(.system(size: 12, weight: .semibold)).padding(.top, 18)
             HStack {
                 TextField("xxxx-xxxx-xxxx-xxxx-xxxx", text: $entered)
