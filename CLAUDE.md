@@ -48,5 +48,10 @@ Sustainable Use License 1.0 (`SUL-1.0`), same as Calendar-Sync: `LICENSE.md` + R
     - Consider the code as the single default path for everyone (works on any Mac), with iCloud as a fallback.
     - Have setup confirm "Connected" from the first message, whichever path it came by.
     - Guide the automations ("App › Is Closed" with several apps, plus hourly Time of Day) with pictures.
+- **Dismiss the nudge (Jorge, 2026-11-04).** Today the strip only offers Going and In 10 min. Proposal:
+  - Swipe up or scroll up on the strip to dismiss it, with momentum, since it drops from the top.
+  - Esc when it's focused.
+  - A small × that appears on hover.
+  - Dismiss means "not this gap": quiet until the gap ends, like Going, but not counted as a walk if stats come later.
 - Later ideas, not started: other app modes (Jorge wants them, design first), goal-reached moment, configurable walking pace, desktop widgets (need paid account), Android phones as a steps source ("coming soon" in README).
 - Next step, decided: Homebrew like Calendar-Sync — a **formula** (not a cask) in `jorgesousa/homebrew-tap` that builds from source, so no quarantine or notarization. Install: `brew install jorgesousa/tap/unsit`. Needs: tag `v<version>`, `Formula/unsit.rb` (model: neteinstein/homebrew-tap), app links itself into `~/Applications` on first run, `brew services` for open at login, README install section + tap badge.
