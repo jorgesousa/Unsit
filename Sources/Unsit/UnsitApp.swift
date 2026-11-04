@@ -117,8 +117,10 @@ struct StepsFile: Decodable {
             steps = v
         } else {
             // Handles "4980", "4 980", "4,980", "4.980" and an empty value.
+            // If the shortcut sends several days (one per line), only the first one counts.
             let s = (try? c.decode(String.self, forKey: .steps)) ?? ""
-            steps = Double(s.filter(\.isNumber)) ?? 0
+            let first = s.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+            steps = Double(first.filter(\.isNumber)) ?? 0
         }
         updatedAt = (try? c.decode(String.self, forKey: .updatedAt)) ?? ""
     }
