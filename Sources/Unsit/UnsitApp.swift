@@ -134,7 +134,6 @@ final class UnsitModel: ObservableObject {
     @Published var glassML: Int { didSet { defaults.set(glassML, forKey: "glassML") } }
     @Published var dayStartHour: Int { didSet { defaults.set(dayStartHour, forKey: "dayStartHour") } }
     @Published var dayEndHour: Int { didSet { defaults.set(dayEndHour, forKey: "dayEndHour") } }
-    @Published var sitLimitMinutes: Int { didSet { defaults.set(sitLimitMinutes, forKey: "sitLimitMinutes") } }
     @Published var cornerMode: Bool { didSet { defaults.set(cornerMode, forKey: "cornerMode"); applyMode() } }
     @Published var onboarded: Bool { didSet { defaults.set(onboarded, forKey: "onboarded"); applyMode() } }
     @Published var paused = false { didSet { evaluateNudge() } }
@@ -154,7 +153,6 @@ final class UnsitModel: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private let store = EKEventStore()
-    private var lastMove = Date()
     private var snoozeUntil: Date?
     private var timer: Timer?
     private var lastEventsFetch = Date.distantPast
@@ -167,7 +165,6 @@ final class UnsitModel: ObservableObject {
         glassML = d.object(forKey: "glassML") as? Int ?? 250
         dayStartHour = d.object(forKey: "dayStartHour") as? Int ?? 9
         dayEndHour = d.object(forKey: "dayEndHour") as? Int ?? 19
-        sitLimitMinutes = d.object(forKey: "sitLimitMinutes") as? Int ?? 45
         cornerMode = d.bool(forKey: "cornerMode")
         onboarded = d.bool(forKey: "onboarded")
         customStepsPath = d.string(forKey: "customStepsPath")
@@ -210,7 +207,6 @@ final class UnsitModel: ObservableObject {
         steps = 0
         stepsUpdatedAt = nil
         waterML = defaults.integer(forKey: "water-" + key)
-        lastMove = now
         events = []
         lastEventsFetch = .distantPast
     }
@@ -287,7 +283,6 @@ final class UnsitModel: ObservableObject {
         }
 
         let newSteps = Int(file.steps.rounded())
-        if stepsUpdatedAt != nil, newSteps - steps >= 300 { lastMove = now }   // you walked
         steps = newSteps
         stepsUpdatedAt = when
         stepsStatus = nil
@@ -330,7 +325,6 @@ final class UnsitModel: ObservableObject {
             isAway = true
         } else if isAway && idle < 60 {
             isAway = false
-            lastMove = now     // you were away from the desk, so the seated clock restarts
         }
     }
 
@@ -380,7 +374,6 @@ final class UnsitModel: ObservableObject {
     var behindBy: Int { max(0, expectedSteps - steps) }
     var goalReached: Bool { steps >= stepGoal }
     var isWorkday: Bool { now >= dayStart && now < dayEnd }
-    var seatedMinutes: Int { isAway ? 0 : max(0, Int(now.timeIntervalSince(lastMove) / 60)) }
 
     var walkMinutes: Int {
         let need = isWorkday ? behindBy : max(0, stepGoal - steps)
@@ -439,7 +432,7 @@ final class UnsitModel: ObservableObject {
 
     var nudgeTitle: String {
         if gapOpenNow, let g = nextGap { return "Gap open until \(timeText(g.end))" }
-        return "\(seatedMinutes) minutes in the chair"
+        return "Time for a walk"
     }
 
     var nudgeDetail: String {
@@ -465,8 +458,8 @@ final class UnsitModel: ObservableObject {
     var shouldNudge: Bool {
         guard onboarded, !paused, isWorkday, !goalReached, !isAway, currentMeeting == nil else { return false }
         if let s = snoozeUntil, s > now { return false }
-        if seatedMinutes >= sitLimitMinutes { return true }
-        return gapOpenNow && behindBy > 300 && seatedMinutes >= 15
+        // Only nudge when a gap is open and you're meaningfully behind pace.
+        return gapOpenNow && behindBy > 300
     }
 
     func evaluateNudge() {
@@ -482,8 +475,8 @@ final class UnsitModel: ObservableObject {
     }
 
     func going() {
-        lastMove = now
-        snoozeUntil = now.addingTimeInterval(Double(walkMinutes + 10) * 60)
+        // You're on it: stay quiet for the rest of this gap.
+        snoozeUntil = nextGap?.end ?? now.addingTimeInterval(Double(walkMinutes + 10) * 60)
         evaluateNudge()
     }
 
@@ -709,14 +702,6 @@ struct PanelView: View {
             Divider().padding(.vertical, 12)
 
             HStack(spacing: 10) {
-                Text("Seated").frame(width: 52, alignment: .leading).foregroundStyle(.secondary)
-                ProgressView(value: min(1, Double(model.seatedMinutes) / Double(max(1, model.sitLimitMinutes))))
-                    .tint(Color.primary)
-                Text("\(model.seatedMinutes) min").fontWeight(.semibold).monospacedDigit()
-            }
-            .font(.system(size: 13))
-
-            HStack(spacing: 10) {
                 Text("Water").frame(width: 52, alignment: .leading).foregroundStyle(.secondary)
                 WaterCups(filled: model.waterML / max(1, model.glassML),
                           total: model.waterGoalML / max(1, model.glassML))
@@ -729,7 +714,6 @@ struct PanelView: View {
                     .contextMenu { Button("Remove a glass") { model.removeGlass() } }
             }
             .font(.system(size: 13))
-            .padding(.top, 10)
 
             Divider().padding(.vertical, 12)
 
@@ -767,11 +751,6 @@ struct SettingsMenu: View {
                 Button("08:00 to 18:00") { model.dayStartHour = 8; model.dayEndHour = 18 }
                 Button("09:00 to 19:00") { model.dayStartHour = 9; model.dayEndHour = 19 }
                 Button("10:00 to 20:00") { model.dayStartHour = 10; model.dayEndHour = 20 }
-            }
-            Menu("Nudge after") {
-                ForEach([30, 45, 60], id: \.self) { m in
-                    Button("\(m) minutes seated") { model.sitLimitMinutes = m }
-                }
             }
             Button("Choose steps file…") { model.chooseStepsFile() }
             Button("Set up again…") {
