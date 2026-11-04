@@ -15,7 +15,11 @@ A macOS menu bar app that gets you to 10,000 steps and enough water during the w
 ![Menu bar app](https://img.shields.io/badge/lives%20in-the%20menu%20bar-FF5A1F)
 ![No developer account](https://img.shields.io/badge/Apple%20Developer%20account-not%20needed-16181B)
 
-<img src="docs/menu-bar.png" width="400" alt="The Unsit panel: 60 of 10,000 steps, 3 h 50 min free of meetings today, about 1 h 40 min of walking left, the day's meetings and gaps on a strip from 09 to 17, and 0.75 of 2 litres of water">
+<a href="https://github.com/jorgesousa/Unsit/raw/main/docs/unsit.mp4">
+  <img src="docs/demo.webp" width="860" alt="Unsit demo: a day fills with meetings, Unsit lights up the gaps, steps arrive from the iPhone, a nudge drops in when a gap opens, and water fills one glass at a time">
+</a>
+
+<sub>▶ <a href="https://github.com/jorgesousa/Unsit/raw/main/docs/unsit.mp4">Watch with sound</a> · 20 seconds</sub>
 
 </div>
 
@@ -23,7 +27,7 @@ A macOS menu bar app that gets you to 10,000 steps and enough water during the w
 
 ## Install
 
-You need **macOS 14 or later**, the **Xcode command line tools**, and an **iPhone with Apple Health** signed in to the same iCloud account as your Mac.
+You need **macOS 14 or later**, the **Xcode command line tools**, and an **iPhone with Apple Health** signed in to the same iCloud account as your Mac. Android phones are coming soon.
 
 ```bash
 xcode-select --install          # only if you don't have the command line tools yet
@@ -88,6 +92,8 @@ No nudges during a meeting, while you're away from the Mac (idle for 5 minutes o
 </td>
 </tr>
 </table>
+
+<p align="center"><img src="docs/menu-bar.png" width="400" alt="The Unsit panel in dark mode: 60 of 10,000 steps, 3 h 50 min free of meetings today, the day's meetings and gaps on a strip from 09 to 17, and 0.75 of 2 litres of water"></p>
 
 The menu bar shows today's steps next to a walking figure. The panel's footer says when steps last arrived from your iPhone, and turns orange when that was more than 90 minutes ago, so you notice if an automation stops.
 
@@ -239,6 +245,7 @@ The version lives in [`Resources/Info.plist`](Resources/Info.plist). It's what S
 
 ### Known limits
 
+- **iPhone only for now.** Steps come from Apple Health through an iPhone shortcut. Android phones are coming soon.
 - **Steps arrive when the shortcut runs**, not live. With the automations above, that's several times an hour.
 - **No desktop widgets yet.** Widgets need App Groups, which need the paid developer account.
 - **Not sandboxed**, so it can read the shortcut's file in iCloud Drive. Unsit reads only that file and your calendar, and only goes online to check GitHub for a newer version.
@@ -252,3 +259,8 @@ Not chosen yet. Add a `LICENSE` file before sharing the repo publicly.
 Made by [Jorge Sousa](https://github.com/jorgesousa).
 
 Copyright (c) 2026 Jorge Sousa (https://github.com/jorgesousa)
+
+<div align="center">
+<br>
+<sub>Demo video made with <a href="https://github.com/latent-spaces/brag">/brag</a>.</sub>
+</div>
