@@ -472,6 +472,27 @@ final class UnsitModel: ObservableObject {
         return gaps
     }
 
+    /// Minutes of free time left between meetings in today's workday.
+    var freeMinutesLeft: Int {
+        let secs = freeGaps
+            .filter { $0.end > now }
+            .reduce(0.0) { $0 + $1.end.timeIntervalSince(max($1.start, now)) }
+        return Int(secs / 60)
+    }
+
+    /// Minutes of walking still needed to reach the goal.
+    var walkMinutesNeeded: Int {
+        Int((Double(max(0, stepGoal - steps)) / UnsitConfig.stepsPerMinute).rounded(.up))
+    }
+
+    var enoughTimeToWalk: Bool { freeMinutesLeft >= walkMinutesNeeded }
+
+    static func durationText(_ minutes: Int) -> String {
+        let h = minutes / 60, m = minutes % 60
+        if h == 0 { return "\(m) min" }
+        return m == 0 ? "\(h) h" : "\(h) h \(m) min"
+    }
+
     /// What the day strip shows for a moment: a meeting's name, or a gap's length and what it's worth.
     func stripInfo(at t: Date) -> (title: String, detail: String)? {
         if let e = events.first(where: { $0.start <= t && $0.end > t }) {
@@ -853,17 +874,39 @@ struct PanelView: View {
                 SettingsMenu()
             }
 
-            Text(model.steps.formatted())
-                .font(.system(size: 58, weight: .semibold).monospacedDigit())
-                .tracking(-2)
-                .padding(.top, 18)
+            HStack(alignment: .lastTextBaseline) {
+                Text(model.steps.formatted())
+                    .font(.system(size: 58, weight: .semibold).monospacedDigit())
+                    .tracking(-2)
+                Spacer(minLength: 12)
+                if !model.goalReached && model.calendarAllowed && model.now < model.dayEnd {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(UnsitModel.durationText(model.freeMinutesLeft))
+                            .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                            .tracking(-0.5)
+                        Text("free to walk today")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    .help("Time left between your meetings until \(UnsitModel.hhmm(model.dayEndMinute))")
+                }
+            }
+            .padding(.top, 18)
 
             HStack {
                 Text("of \(model.stepGoal.formatted()) steps").foregroundStyle(.secondary)
                 Spacer()
-                Text(model.paceText)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(model.behindBy > 0 ? Color.unsitSignal : Color.secondary)
+                if model.behindBy > 0 {
+                    Text(model.paceText).fontWeight(.semibold).foregroundStyle(Color.unsitSignal)
+                } else if !model.goalReached && model.calendarAllowed && model.now < model.dayEnd {
+                    Text(model.enoughTimeToWalk
+                         ? "you need about \(UnsitModel.durationText(model.walkMinutesNeeded))"
+                         : "not enough: you need \(UnsitModel.durationText(model.walkMinutesNeeded))")
+                        .fontWeight(model.enoughTimeToWalk ? .regular : .semibold)
+                        .foregroundStyle(model.enoughTimeToWalk ? Color.secondary : Color.unsitSignal)
+                } else {
+                    Text(model.paceText).fontWeight(.semibold).foregroundStyle(Color.secondary)
+                }
             }
             .font(.system(size: 13))
             .padding(.top, 2)
