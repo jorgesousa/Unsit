@@ -268,6 +268,9 @@ final class UnsitModel: ObservableObject {
             .replacingOccurrences(of: "\u{201E}", with: "\"")
             .replacingOccurrences(of: "\u{2033}", with: "\"")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+            // Several days arrive as raw line breaks inside the value, which JSON doesn't allow.
+            .replacingOccurrences(of: "\r\n", with: "\\n")
+            .replacingOccurrences(of: "\n", with: "\\n")
         guard let file = try? JSONDecoder().decode(StepsFile.self, from: Data(text.utf8)) else {
             stepsStatus = "Found \(url.lastPathComponent) but couldn't read it. It contains: \(text.prefix(120))"
             return
