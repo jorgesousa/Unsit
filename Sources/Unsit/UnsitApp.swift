@@ -6,6 +6,7 @@
 
 import SwiftUI
 import AppKit
+import Combine
 import EventKit
 import ServiceManagement
 import UniformTypeIdentifiers
@@ -57,52 +58,205 @@ func timeText(_ d: Date) -> String { d.formatted(.dateTime.hour(.twoDigits(amPM:
 
 @main
 struct UnsitApp: App {
-    @StateObject private var model = UnsitModel()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra {
-            PanelView()
-                .environmentObject(model)
-                .frame(width: 360)
-                // The window takes the panel's exact height, and the panel paints edge to edge,
-                // so no band of the system window shows above or below it.
-                .fixedSize(horizontal: false, vertical: true)
-                .background(.background, ignoresSafeAreaEdges: .all)
-        } label: {
-            MenuBarLabel().environmentObject(model)
+        // The menu bar item, its panel and the windows are AppKit-owned (see MenuBarController
+        // and WindowRouter). This scene only exists because a SwiftUI app needs one; it never
+        // opens on its own.
+        Settings {
+            SettingsView().environmentObject(appDelegate.model)
         }
-        .menuBarExtraStyle(.window)
-
-        Window("Unsit Settings", id: "settings") {
-            SettingsView().environmentObject(model)
-        }
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
-
-        Window("Welcome to Unsit", id: "onboarding") {
-            OnboardingView().environmentObject(model)
-        }
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
     }
 }
 
-struct MenuBarLabel: View {
-    @EnvironmentObject var model: UnsitModel
-    @Environment(\.openWindow) private var openWindow
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let model = UnsitModel()
+    private var menuBar: MenuBarController?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        WindowRouter.shared.model = model
+        menuBar = MenuBarController(model: model)
+        model.start()
+        if !model.onboarded { WindowRouter.shared.showOnboarding() }
+    }
+}
+
+// MARK: - Menu bar item and panel
+
+/// Our own panel under the menu bar icon. The system container behind SwiftUI's MenuBarExtra
+/// adds translucent bands above and below the content that the app can't paint over,
+/// so Unsit draws the whole panel itself.
+final class MenuPanel: NSPanel {
+    var onCancel: (() -> Void)?
+
+    init() {
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 360, height: 480),
+                   styleMask: [.borderless, .nonactivatingPanel],
+                   backing: .buffered, defer: true)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        level = .statusBar
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+        acceptsMouseMovedEvents = true
+    }
+
+    override var canBecomeKey: Bool { true }
+    override func cancelOperation(_ sender: Any?) { onCancel?() }   // Esc closes it
+}
+
+/// The panel's look: one opaque surface with continuous corners and a hairline edge,
+/// the same in light and dark.
+struct MenuPanelContent: View {
+    static let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
 
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: model.goalReached ? "checkmark.circle" : (model.isNudging ? "figure.walk.motion" : "figure.walk"))
-            Text(model.menuTitle)
+        PanelView()
+            .frame(width: 360)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(.background, in: Self.shape)
+            .clipShape(Self.shape)
+            .overlay(Self.shape.strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.5))
+    }
+}
+
+@MainActor
+final class MenuBarController: NSObject, NSWindowDelegate {
+    static private(set) weak var shared: MenuBarController?
+
+    private let model: UnsitModel
+    private let statusItem: NSStatusItem
+    private let panel = MenuPanel()
+    private let host: NSHostingView<AnyView>
+    private var changes: AnyCancellable?
+    private var outsideClicks: Any?
+    private var lastClosed = Date.distantPast
+
+    init(model: UnsitModel) {
+        self.model = model
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        host = NSHostingView(rootView: AnyView(MenuPanelContent().environmentObject(model)))
+        super.init()
+        panel.contentView = host
+        panel.delegate = self
+        panel.onCancel = { [weak self] in self?.hidePanel() }
+        if let button = statusItem.button {
+            button.target = self
+            button.action = #selector(toggle(_:))
+            button.imagePosition = .imageLeading
+            // Fixed-width digits so the item doesn't wobble as the count goes up.
+            button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         }
-        .onAppear {
-            model.start()
-            if !model.onboarded {
-                openWindow(id: "onboarding")
-                NSApp.activate()
-            }
+        updateLabel()
+        changes = model.objectWillChange.sink { [weak self] _ in
+            // objectWillChange fires before the value changes; read it on the next turn.
+            Task { @MainActor in self?.modelChanged() }
         }
+        Self.shared = self
+    }
+
+    private func modelChanged() {
+        updateLabel()
+        if panel.isVisible { position() }
+    }
+
+    private func updateLabel() {
+        guard let button = statusItem.button else { return }
+        let symbol = model.goalReached ? "checkmark.circle"
+            : (model.isNudging ? "figure.walk.motion" : "figure.walk")
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Unsit")
+        image?.isTemplate = true
+        button.image = image
+        button.title = " " + model.menuTitle
+    }
+
+    @objc private func toggle(_ sender: Any?) {
+        if panel.isVisible {
+            hidePanel()
+        } else if Date().timeIntervalSince(lastClosed) > 0.25 {
+            // The click that closed it by leaving the panel shouldn't reopen it.
+            showPanel()
+        }
+    }
+
+    func showPanel() {
+        position()
+        panel.alphaValue = 0
+        panel.makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.12
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
+            panel.animator().alphaValue = 1
+        }
+        statusItem.button?.highlight(true)
+        outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in self?.hidePanel() }
+        }
+    }
+
+    func hidePanel() {
+        guard panel.isVisible else { return }
+        panel.orderOut(nil)
+        statusItem.button?.highlight(false)
+        lastClosed = Date()
+        if let m = outsideClicks { NSEvent.removeMonitor(m); outsideClicks = nil }
+    }
+
+    func windowDidResignKey(_ notification: Notification) { hidePanel() }
+
+    /// Under the icon, centred on it, kept inside the screen; the top edge stays put as the content grows.
+    private func position() {
+        guard let button = statusItem.button, let buttonWindow = button.window else { return }
+        let size = host.fittingSize
+        let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        var x = anchor.midX - size.width / 2
+        if let visible = (buttonWindow.screen ?? NSScreen.main)?.visibleFrame {
+            x = min(max(x, visible.minX + 6), visible.maxX - size.width - 6)
+        }
+        let frame = NSRect(x: x.rounded(), y: (anchor.minY - 6 - size.height).rounded(),
+                           width: size.width, height: size.height)
+        if panel.frame != frame {
+            panel.setFrame(frame, display: true)
+            panel.invalidateShadow()
+        }
+    }
+}
+
+// MARK: - Windows
+
+/// Opens the setup and settings windows. A closed window is rebuilt next time, so setup starts at step 1.
+@MainActor
+final class WindowRouter {
+    static let shared = WindowRouter()
+    weak var model: UnsitModel?
+    private var windows: [String: NSWindow] = [:]
+
+    func showSettings() { show(id: "settings", title: "Unsit Settings") { SettingsView() } }
+    func showOnboarding() { show(id: "onboarding", title: "Welcome to Unsit") { OnboardingView() } }
+    func close(_ id: String) { windows[id]?.close() }
+
+    private func show<V: View>(id: String, title: String, @ViewBuilder content: () -> V) {
+        guard let model else { return }
+        MenuBarController.shared?.hidePanel()
+        let window: NSWindow
+        if let existing = windows[id], existing.isVisible {
+            window = existing
+        } else {
+            let controller = NSHostingController(rootView: content().environmentObject(model))
+            controller.sizingOptions = [.preferredContentSize]
+            window = NSWindow(contentViewController: controller)
+            window.title = title
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            windows[id] = window
+        }
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
     }
 }
 
@@ -1077,19 +1231,12 @@ struct PauseMenu: View {
 
 struct SettingsMenu: View {
     @EnvironmentObject var model: UnsitModel
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Menu {
             Toggle("Open at login", isOn: openAtLoginBinding)
-            Button("Settings…") {
-                openWindow(id: "settings")
-                NSApp.activate()
-            }
-            Button("Set up again…") {
-                openWindow(id: "onboarding")
-                NSApp.activate()
-            }
+            Button("Settings…") { WindowRouter.shared.showSettings() }
+            Button("Set up again…") { WindowRouter.shared.showOnboarding() }
             Divider()
             Button("Quit Unsit") { NSApp.terminate(nil) }
         } label: {
@@ -1291,7 +1438,6 @@ func qrImage(_ string: String) -> NSImage {
 
 struct OnboardingView: View {
     @EnvironmentObject var model: UnsitModel
-    @Environment(\.dismissWindow) private var dismissWindow
     @State private var step = 1
     @State private var timesDone = false
     @State private var appsDone = false
@@ -1533,7 +1679,7 @@ struct OnboardingView: View {
 
     private func finish() {
         model.onboarded = true
-        dismissWindow(id: "onboarding")
+        WindowRouter.shared.close("onboarding")
     }
 }
 

@@ -103,3 +103,9 @@ docs/                      design renders used in this README
 ## Licence
 
 Not chosen yet. Add a `LICENSE` file before sharing the repo publicly.
+
+## Author
+
+Made by [Jorge Sousa](https://github.com/jorgesousa).
+
+Copyright (c) 2026 Jorge Sousa (https://github.com/jorgesousa)
