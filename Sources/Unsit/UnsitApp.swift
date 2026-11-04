@@ -18,6 +18,8 @@ import UnsitCore
 enum UnsitConfig {
     /// Paste the iCloud link of your shared "Unsit Sync" shortcut here.
     static let shortcutLink = "https://www.icloud.com/shortcuts/REPLACE_WITH_YOUR_LINK"
+    /// Until the shared shortcut exists, setup shows how to build it instead of a QR code.
+    static var hasShortcutLink: Bool { !shortcutLink.contains("REPLACE") }
     /// iCloud Drive › Shortcuts › Unsit › steps.json
     static let stepsFile = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Mobile Documents/iCloud~is~workflow~my~workflows/Documents/Unsit/steps.json")
@@ -443,6 +445,8 @@ final class UnsitModel: ObservableObject {
     @Published private(set) var relayReached: Bool?
     /// The newest reading from each source. The newer one from today wins.
     @Published private(set) var relayReading: StepsReading?
+    /// Which way the steps on screen arrived.
+    @Published private(set) var stepsSource: StepsReading.Source?
     private var fileReading: StepsReading?
     private var fileStatus: String?
     private var fileMissing = false
@@ -540,6 +544,7 @@ final class UnsitModel: ObservableObject {
         if let best = today.max(by: { $0.at < $1.at }) {
             steps = best.steps
             stepsUpdatedAt = best.at
+            stepsSource = best.source
             stepsStatus = nil
         } else if fileMissing && relayReached == true {
             // A Mac without the iCloud file: the code is the way in, so talk about that.
@@ -2141,15 +2146,16 @@ func qrImage(_ string: String) -> NSImage {
     return image
 }
 
+/// First run. One way in that works on any Mac (the shortcut posts to this Mac's code),
+/// the shortcut's recipe in plain sight, the automations that keep it fresh, and checks
+/// that show it working instead of boxes to tick.
 struct OnboardingView: View {
     @EnvironmentObject var model: UnsitModel
     @State private var step = 1
-    @State private var timesDone = false
-    @State private var appsDone = false
-    @State private var showManual = false
     @State private var showCode = false
+    @State private var copied = false
 
-    private let titles = ["Add the shortcut", "Run it once", "Keep it fresh", "Find your gaps"]
+    private let titles = ["Get Unsit Sync", "Run it once", "Keep it fresh", "Your day"]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -2157,12 +2163,11 @@ struct OnboardingView: View {
             Divider()
             content
                 .padding(.horizontal, 44)
-                .padding(.top, 40)
+                .padding(.top, 36)
                 .padding(.bottom, 24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(width: 820, height: 560)
-        .sheet(isPresented: $showManual) { ManualShortcutSheet().environmentObject(model) }
+        .frame(width: 820, height: 580)
         .sheet(isPresented: $showCode) { RelayCodeSheet().environmentObject(model) }
     }
 
@@ -2176,33 +2181,37 @@ struct OnboardingView: View {
             .padding(.bottom, 18)
 
             ForEach(1...4, id: \.self) { i in
-                HStack(spacing: 10) {
-                    ZStack {
-                        Circle()
-                            .fill(i <= step ? Color.primary : Color.primary.opacity(0.1))
-                            .frame(width: 22, height: 22)
-                        if i < step {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(Color(nsColor: .windowBackgroundColor))
-                        } else {
-                            Text("\(i)")
-                                .font(.system(size: 11.5, weight: .semibold))
-                                .foregroundStyle(i == step ? Color(nsColor: .windowBackgroundColor) : Color.secondary)
+                Button { step = i } label: {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(i <= step ? Color.primary : Color.primary.opacity(0.1))
+                                .frame(width: 22, height: 22)
+                            if i < step {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(Color(nsColor: .windowBackgroundColor))
+                            } else {
+                                Text("\(i)")
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(i == step ? Color(nsColor: .windowBackgroundColor) : Color.secondary)
+                            }
                         }
+                        Text(titles[i - 1])
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(i == step ? Color.primary : Color.secondary)
+                        Spacer()
                     }
-                    Text(titles[i - 1])
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(i == step ? Color.primary : Color.secondary)
-                    Spacer()
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(i == step ? Color.primary.opacity(0.07) : Color.clear))
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 8).fill(i == step ? Color.primary.opacity(0.07) : Color.clear))
+                .buttonStyle(.plain)
             }
 
             Spacer()
-            Text("Takes about three minutes. Your iPhone stays in your pocket after this.")
+            Text("About five minutes, once. After that your iPhone does it on its own.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
@@ -2224,52 +2233,122 @@ struct OnboardingView: View {
     }
 
     private func header(_ title: String, _ lead: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.system(size: 26, weight: .semibold)).tracking(-0.5)
             Text(lead)
-                .font(.system(size: 14.5))
+                .font(.system(size: 14))
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: 440, alignment: .leading)
+                .frame(maxWidth: 470, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        copied = true
+    }
+
+    private func footer(back: Int?, next: String, action: @escaping () -> Void) -> some View {
+        HStack {
+            if step == 1 {
+                Button("Already using Unsit on another Mac? Use its code") { showCode = true }
+                    .buttonStyle(.link)
+                    .font(.system(size: 12.5))
+            }
+            Spacer()
+            if let back { Button("Back") { step = back } }
+            Button(next, action: action).keyboardShortcut(.defaultAction)
+        }
+    }
+
+    // MARK: 1 · The shortcut
+
     private var stepOne: some View {
         VStack(alignment: .leading, spacing: 0) {
             header("Bring your steps over from iPhone",
-                   "Apple Health only lives on your iPhone and Watch. A free Apple shortcut copies today's steps to this Mac through iCloud Drive.")
-            HStack(spacing: 28) {
-                Image(nsImage: qrImage(UnsitConfig.shortcutLink))
-                    .interpolation(.none)
-                    .resizable()
-                    .frame(width: 150, height: 150)
-                    .padding(14)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(Color.white))
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Scan with your iPhone camera").font(.system(size: 14, weight: .semibold))
-                    Text("The link opens Shortcuts. Tap Add Shortcut and you'll see Unsit Sync in your list.")
-                        .font(.system(size: 12.5)).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("No App Store, no account. You can delete it any time.")
-                        .font(.system(size: 12.5)).foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: 250, alignment: .leading)
+                   "Apple Health lives on your iPhone and Watch. A free Apple shortcut sends today's steps to this Mac.")
+            if UnsitConfig.hasShortcutLink { qrBlock } else { recipe }
+            Spacer(minLength: 10)
+            footer(back: nil, next: "Next") { step = 2 }
+        }
+    }
+
+    private var qrBlock: some View {
+        HStack(alignment: .top, spacing: 26) {
+            Image(nsImage: qrImage(UnsitConfig.shortcutLink))
+                .interpolation(.none)
+                .resizable()
+                .frame(width: 140, height: 140)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 14).fill(Color.white))
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Scan with your iPhone camera").font(.system(size: 14, weight: .semibold))
+                Text("Tap Add Shortcut. When it asks for your code, paste this:")
+                    .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                codeLine
             }
-            .padding(.top, 30)
-            Spacer()
-            HStack {
-                Button("Build it by hand instead") { showManual = true }.buttonStyle(.link)
-                Spacer()
-                Button("I've added it") { step = 2 }.keyboardShortcut(.defaultAction)
+        }
+        .padding(.top, 26)
+    }
+
+    private var codeLine: some View {
+        HStack(spacing: 10) {
+            Text(model.relayCode)
+                .font(.system(size: 15, design: .monospaced))
+                .textSelection(.enabled)
+            Button(copied ? "Copied" : "Copy") { copy(model.relayCode) }
+        }
+    }
+
+    /// The shortcut, action by action, with this Mac's URL filled in.
+    private var recipe: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("On your iPhone, open Shortcuts, tap +, name it Unsit Sync and add these actions:")
+                .font(.system(size: 13)).foregroundStyle(.secondary)
+            recipeRow(1, "Find Health Samples", "Type Steps · Start Date is today · Group By Day · Fill Missing off")
+            recipeRow(2, "Get Details of Health Samples", "Value")
+            recipeRow(3, "Round Number", "To Integer")
+            recipeRow(4, "Text", "{\"steps\": \"Rounded Number\", \"updatedAt\": \"Current Date\"}  Tap Current Date › ISO 8601, with time.")
+            recipeRow(5, "Get Contents of URL", "\(model.relayURL.absoluteString)  Method POST · Request Body File › Text",
+                      copyValue: model.relayURL.absoluteString)
+            recipeRow(6, "Save File (optional)", "Shortcuts/Unsit/steps.json · Ask Where to Save off · Overwrite on. Only helps Macs signed in to your iCloud.")
+            Text("Copy works across devices: with Handoff on, paste the URL straight on your iPhone.")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+        }
+        .padding(.top, 20)
+    }
+
+    private func recipeRow(_ n: Int, _ action: String, _ detail: String, copyValue: String? = nil) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("\(n)")
+                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 14, alignment: .trailing)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(action).font(.system(size: 13, weight: .semibold))
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            if let copyValue {
+                Button(copied ? "Copied" : "Copy URL") { copy(copyValue) }
             }
         }
     }
 
+    // MARK: 2 · Run it once
+
     private var stepTwo: some View {
         let connected = model.stepsUpdatedAt != nil
+        let via = model.stepsSource == .relay ? "through your code" : "through iCloud Drive"
         return VStack(alignment: .leading, spacing: 0) {
             header("Run it once",
-                   "On your iPhone, open Shortcuts and tap Unsit Sync. When Health asks, allow Steps. This Mac is listening for it.")
+                   "On your iPhone, tap Unsit Sync. When Health asks, allow Steps. This Mac is watching for it.")
             HStack(spacing: 14) {
                 if connected {
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 30)).foregroundStyle(.green)
@@ -2278,7 +2357,7 @@ struct OnboardingView: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(connected ? "Connected" : "Waiting for your iPhone…").font(.system(size: 15, weight: .semibold))
-                    Text(connected ? "Arrived from iPhone at \(timeText(model.stepsUpdatedAt ?? Date()))"
+                    Text(connected ? "Arrived at \(timeText(model.stepsUpdatedAt ?? Date())), \(via)"
                                    : "Run Unsit Sync on your iPhone now.")
                         .font(.system(size: 12.5)).foregroundStyle(.secondary)
                 }
@@ -2289,76 +2368,70 @@ struct OnboardingView: View {
                         Text("steps today").font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                 } else {
-                    VStack(alignment: .trailing, spacing: 6) {
-                        Button("Check now") { model.checkNow() }
-                        Button("Choose the file…") { model.chooseStepsFile() }
-                            .buttonStyle(.link)
-                            .font(.system(size: 12))
-                    }
+                    Button("Check now") { model.checkNow() }
                 }
             }
             .padding(16)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
-            .padding(.top, 30)
+            .padding(.top, 28)
             Text(connected
-                 ? "Does that match the Health app? If it shows roughly double, open the shortcut and check that Group By is set to Day."
-                 : (model.stepsStatus ?? "Unsit looks for steps.json in iCloud Drive › Shortcuts › Unsit."))
+                 ? "Same number as the Health app? If it's about double, set Group By to Day in the first action."
+                 : (model.stepsStatus.map { "Not yet: \($0)" } ?? "Unsit checks every minute, or right away with Check now."))
                 .font(.system(size: 12.5)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 14)
-            Button("This Mac isn't signed in to your iCloud? Connect with a code") { showCode = true }
-                .buttonStyle(.link)
-                .font(.system(size: 12.5))
-                .padding(.top, 8)
             Spacer()
-            HStack {
-                Spacer()
-                Button("Back") { step = 1 }
-                Button("Next") { step = 3 }.keyboardShortcut(.defaultAction)
+            footer(back: 1, next: connected ? "Next" : "Skip for now") { step = 3 }
+        }
+        .task { @MainActor in
+            // While this step is open, ask for new steps every few seconds instead of every minute.
+            while !Task.isCancelled && model.stepsUpdatedAt == nil {
+                model.checkNow()
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
             }
         }
     }
+
+    // MARK: 3 · Automations
 
     private var stepThree: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header("Keep it fresh during the day",
-                   "Your iPhone can run Unsit Sync on its own. In Shortcuts, open Automation and add these two.")
+            header("Let your iPhone keep it fresh",
+                   "Two automations run Unsit Sync for you all day. In Shortcuts, open Automation, tap +, and for both choose Run Immediately with Notify When Run off.")
             VStack(alignment: .leading, spacing: 12) {
-                automationCard(isOn: $timesDone, title: "At set times",
-                               detail: "Time of Day, Daily, at 09:00, 10:30, 12:00, 13:30, 15:00, 16:30 and 18:00. Choose Run Immediately and turn off notifications.")
-                automationCard(isOn: $appsDone, title: "When you open busy apps",
-                               detail: "App, Is Opened: pick Slack, Teams or Mail. Same settings. Steps then refresh many times a day.")
+                automationCard(title: "When you leave your busiest apps",
+                               detail: "App › choose the ones you open all day, like WhatsApp, Slack, Teams and Mail › Is Closed › Unsit Sync. This one runs many times a day, while your iPhone is unlocked.")
+                automationCard(title: "Three times a day, as a safety net",
+                               detail: "Time of Day › 10:00, Daily › Unsit Sync. Repeat for 13:00 and 16:00.")
             }
-            .padding(.top, 26)
-            Text("The menu bar always shows when steps last arrived, so you'll notice if an automation stops.")
-                .font(.system(size: 12.5)).foregroundStyle(.secondary)
-                .padding(.top, 14)
+            .padding(.top, 24)
+            HStack(spacing: 8) {
+                Image(systemName: model.syncIsStale ? "exclamationmark.circle" : "checkmark.circle")
+                    .foregroundStyle(model.syncIsStale ? Color.unsitSignal : Color.green)
+                Text(model.syncText).font(.system(size: 12.5)).foregroundStyle(.secondary)
+            }
+            .padding(.top, 16)
             Spacer()
-            HStack {
-                Spacer()
-                Button("Back") { step = 2 }
-                Button("Next") { step = 4 }.keyboardShortcut(.defaultAction)
-            }
+            footer(back: 2, next: "Next") { step = 4 }
         }
     }
 
-    private func automationCard(isOn: Binding<Bool>, title: String, detail: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Toggle("", isOn: isOn).toggleStyle(.checkbox).labelsHidden()
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 14, weight: .semibold))
-                Text(detail).font(.system(size: 12.5)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+    private func automationCard(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 14, weight: .semibold))
+            Text(detail).font(.system(size: 12.5)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
     }
 
+    // MARK: 4 · Calendar, hours, nudge
+
     private var stepFour: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header("Find the gaps in your day",
+            header("Your day",
                    "Unsit reads your calendar to see where meetings are and when a gap opens. Nothing leaves this Mac.")
             VStack(alignment: .leading, spacing: 0) {
                 DayStrip(model: model, height: 28).padding(.top, 4)
@@ -2366,16 +2439,22 @@ struct OnboardingView: View {
             }
             .padding(16)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
-            .padding(.top, 26)
-            HStack(spacing: 18) {
-                WorkdayPickers()
+            .padding(.top, 24)
+            HStack(spacing: 18) { WorkdayPickers() }
+                .padding(.top, 16)
+            Picker("Walk nudge", selection: $model.nudgeStyle) {
+                Text("Island at the top").tag(NudgeStyle.island)
+                Text("In the menu bar").tag(NudgeStyle.menuBar)
             }
-            .padding(.top, 18)
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 360)
+            .padding(.top, 14)
             Toggle("Open Unsit when you log in", isOn: openAtLoginBinding)
-                .padding(.top, 18)
+                .padding(.top, 14)
             Spacer()
             HStack {
                 Spacer()
+                Button("Back") { step = 3 }
                 Button("Skip calendar") { finish() }
                 Button("Allow calendar and start") {
                     Task {
@@ -2475,35 +2554,3 @@ struct RelayCodeSheet: View {
     }
 }
 
-struct ManualShortcutSheet: View {
-    @EnvironmentObject var model: UnsitModel
-    @Environment(\.dismiss) private var dismiss
-    private var steps: [String] { [
-        "Open Shortcuts on your iPhone, tap + and name the shortcut \"Unsit Sync\".",
-        "Add Find Health Samples: Type is Steps, Start Date is today, Group By Day, Fill Missing off.",
-        "Add Get Details of Health Samples and choose Value.",
-        "Add Round Number, to Integer.",
-        "Add Text: {\"steps\": \"[Rounded Number]\", \"updatedAt\": \"[Current Date]\"}. Set Current Date to ISO 8601 with time.",
-        "Add Save File to Shortcuts/Unsit/steps.json. Turn off Ask Where to Save, turn on Overwrite.",
-        "Optional, for Macs without your iCloud: add Get Contents of URL to \(model.relayURL.absoluteString), Method POST, Request Body File, and pick Text.",
-        "Run it once and allow Steps when Health asks."
-    ] }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Build Unsit Sync by hand").font(.system(size: 18, weight: .semibold))
-            ForEach(Array(steps.enumerated()), id: \.offset) { i, s in
-                HStack(alignment: .top, spacing: 10) {
-                    Text("\(i + 1)").font(.system(size: 13, weight: .semibold)).frame(width: 18)
-                    Text(s).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            HStack {
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(24)
-        .frame(width: 520)
-    }
-}

@@ -22,7 +22,7 @@ SIGN_IDENTITY="Unsit Local" scripts/build-app.sh --open   # keeps calendar permi
 
 ## Conventions
 
-- **Versioning (like neteinstein/Calendar-Sync):** every change that lands on main bumps `CFBundleShortVersionString` (patch) and `CFBundleVersion` (+1) in `Resources/Info.plist`, and the version badge in README. New features bump the minor. Releases tagged `v<version>`. Current: 0.4.0 (build 8), not yet released.
+- **Versioning (like neteinstein/Calendar-Sync):** every change that lands on main bumps `CFBundleShortVersionString` (patch) and `CFBundleVersion` (+1) in `Resources/Info.plist`, and the version badge in README. New features bump the minor. Releases tagged `v<version>`. Current: 0.5.0 (build 9), not yet released.
 - **Design system "A, native premium":** graphite #16181B, paper #FBFBFC, mist #CDD1D7 (meetings), signal orange #FF5A1F (only for time to move / warnings), water blue #2F7DF6 (only water). SF Pro, sentence case, no decoration. Motion: ease-out cubic-bezier(0.23, 1, 0.32, 1), under 300 ms, scale 0.95–0.97 on press.
 - **Panel top (decided):** left = steps "of 10 000 steps"; right = time "free of meetings today". The bottom-right line only appears for warnings ("1 240 behind pace", "… of walking won't fit"). How much to walk lives in the gap line under the strip.
 - **Copy:** English UI, plain verbs, specific numbers. Walking time assumes 100 steps/min.
@@ -38,16 +38,7 @@ Sustainable Use License 1.0 (`SUL-1.0`), same as Calendar-Sync: `LICENSE.md` + R
 - `UnsitConfig.shortcutLink` is still a placeholder; needs the iCloud link of the shared "Unsit Sync" shortcut (the setup QR code uses it).
 - Water sync between Macs over the same ntfy code (water is still per Mac).
 - Pre-fill the ntfy action in the shared shortcut with an Import Question asking for the code.
-- **Redo the whole setup flow (Jorge, 2026-11-04).** What hurt on the first real setup:
-  - Building the shortcut by hand broke in many ways: a fixed date instead of "is today", Fill Missing producing two values, broken variables, Current Date without ISO time, Save File writing `.txt`.
-  - The Google Drive route failed: the Drive app won't let Shortcuts pick its folders.
-  - Pasting the test channel name into the code field made a different code (fixed in 0.3.1).
-  - Two ways in (iCloud file, ntfy code) make the explanations long.
-  - Ideas to weigh:
-    - Ship one shared Unsit Sync, with an Import Question for the code, so nobody edits actions.
-    - Consider the code as the single default path for everyone (works on any Mac), with iCloud as a fallback.
-    - Have setup confirm "Connected" from the first message, whichever path it came by.
-    - Guide the automations ("App › Is Closed" with several apps, plus hourly Time of Day) with pictures.
+- **Setup flow (redone in 0.5.0):** one way in for everyone: the shortcut always POSTs to this Mac's ntfy code (Save File to iCloud is optional). Steps: 1 Get Unsit Sync (QR + code when `UnsitConfig.hasShortcutLink`, otherwise the action-by-action recipe with this Mac's URL and Copy URL; "Already using Unsit on another Mac? Use its code"), 2 Run it once (polls every 5 s, says how the steps arrived via `stepsSource`), 3 Keep it fresh (App › Is Closed with busy apps + Time of Day 10/13/16; live "steps last arrived" check, no checkboxes), 4 Your day (calendar, hours, nudge style, open at login). Still to do: share the real Unsit Sync with an Import Question for the code, then set `shortcutLink`.
 - **Nudge styles (0.4.0, decided with Jorge):** A "Island" is the default: `NudgePanelController` + `IslandView`, a black island from the notch (`NSScreen.safeAreaInsets.top > 0`) or under the menu bar, on the screen with the pointer; hover or click opens it; Going = walk timer then `going()`; swipe/scroll up or ✕ = `notThisGap()`. B "In the menu bar": the status item turns orange with "walk N min" and its click shows an NSMenu (Going, Remind me in 10 min, Not this gap). Setting: Settings › General › Nudge (`nudgeStyle`). Prototype: claude.ai artifact "Unsit Nudge Concepts" (C "The gap opens" was the third idea, not built). To check on a real Mac: hover on the island while Unsit is inactive, click-through on the transparent canvas, the drain band in B is not built yet.
 - Later ideas, not started: other app modes (Jorge wants them, design first), goal-reached moment, configurable walking pace, desktop widgets (need paid account), Android phones as a steps source ("coming soon" in README).
 - Next step, decided: Homebrew like Calendar-Sync — a **formula** (not a cask) in `jorgesousa/homebrew-tap` that builds from source, so no quarantine or notarization. Install: `brew install jorgesousa/tap/unsit`. Needs: tag `v<version>`, `Formula/unsit.rb` (model: neteinstein/homebrew-tap), app links itself into `~/Applications` on first run, `brew services` for open at login, README install section + tap badge.

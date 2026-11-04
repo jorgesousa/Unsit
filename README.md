@@ -8,7 +8,7 @@
 
 A macOS menu bar app that gets you to 10,000 steps and enough water during the workday. It reads your calendar, finds the gaps between meetings, and tells you when to walk. Your steps arrive from your iPhone and Apple Watch on their own.
 
-[![Version 0.4.0](https://img.shields.io/badge/version-0.4.0-2F7DF6)](Resources/Info.plist)
+[![Version 0.5.0](https://img.shields.io/badge/version-0.5.0-2F7DF6)](Resources/Info.plist)
 [![License: Sustainable Use 1.0](https://img.shields.io/badge/license-Sustainable%20Use%201.0-8B5CF6)](LICENSE.md)
 [![Build](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml/badge.svg)](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white)
@@ -37,7 +37,7 @@ cd Unsit
 scripts/build-app.sh --open
 ```
 
-That builds `Unsit.app`, copies it to `/Applications` and opens it. A setup window then walks you through connecting your iPhone and your calendar, in about three minutes. No App Store, and no Apple Developer account.
+That builds `Unsit.app`, copies it to `/Applications` and opens it. A setup window then walks you through connecting your iPhone and your calendar, in about five minutes. No App Store, and no Apple Developer account.
 
 See [Get started](#get-started) for every step, and [Updating](#updating) for later.
 
@@ -157,38 +157,23 @@ scripts/build-app.sh --open
 
 ### 2. Connect your iPhone
 
-The setup window opens on first launch and shows a QR code.
+The setup window opens on first launch. Unsit gives each setup a private code, and the shortcut sends today's steps to it, so this works on any Mac, including a work laptop that isn't signed in to your iCloud.
 
-1. **Add the shortcut.** Scan the QR code with your iPhone camera and tap **Add Shortcut**.
-2. **Run it once.** Open Shortcuts, tap **Unsit Sync** and allow **Steps** when Health asks. The setup window shows **Connected** with today's steps. Check they match the Health app.
-3. **Keep it fresh.** In Shortcuts › **Automation**, add two automations that run Unsit Sync. For both, choose **Run Immediately** and turn off **Notify When Run**.
-   - **Time of Day**, daily, at 09:00, 10:30, 12:00, 13:30, 15:00, 16:30 and 18:00.
-   - **App › Is Opened**, for apps you open all day, like Slack, Teams or Mail.
+1. **Get Unsit Sync.** In Shortcuts on your iPhone, tap **+**, name it **Unsit Sync** and add these actions. The setup window shows the same list with your own URL filled in and a **Copy URL** button.
+   1. **Find Health Samples**: Type **Steps**, Start Date **is today**, Group By **Day**, **Fill Missing off**.
+   2. **Get Details of Health Samples**: **Value**.
+   3. **Round Number**: to **Integer**.
+   4. **Text**: `{"steps": "[Rounded Number]", "updatedAt": "[Current Date]"}`. Tap **Current Date**, choose **ISO 8601** and turn on the time.
+   5. **Get Contents of URL**: `https://ntfy.sh/unsit-<your code>`, Method **POST**, Request Body **File**, and pick **Text**.
+   6. Optional, **Save File**: `Shortcuts/Unsit/steps.json`, **Ask Where to Save** off, **Overwrite If File Exists** on. Only helps Macs signed in to your iCloud.
+2. **Run it once.** Tap **Unsit Sync** and allow **Steps** when Health asks. The setup window shows **Connected**, how the steps arrived and how many. Check they match the Health app.
+3. **Let your iPhone keep it fresh.** In Shortcuts › **Automation**, add two automations that run Unsit Sync, both with **Run Immediately** and **Notify When Run** off:
+   - **App › Is Closed**, for the apps you use all day, like WhatsApp, Slack, Teams and Mail. This one runs many times a day, while your iPhone is unlocked, so it reads fresh numbers.
+   - **Time of Day** at 10:00, 13:00 and 16:00, as a safety net.
 
-<details>
-<summary><b>Build the shortcut by hand instead</b></summary>
+### 3. Another Mac
 
-<br>
-
-In Shortcuts on your iPhone, tap **+**, name it **Unsit Sync** and add these actions in order:
-
-1. **Find Health Samples**: Type is **Steps**, Start Date **is today**, Group By **Day**, **Fill Missing off**.
-2. **Get Details of Health Samples**: **Value**.
-3. **Round Number**: to **Integer**.
-4. **Text**: `{"steps": "[Rounded Number]", "updatedAt": "[Current Date]"}`. Tap **Current Date**, set its format to **ISO 8601** and turn on **Include ISO 8601 Time**.
-5. **Save File**: to `Shortcuts/Unsit/steps.json`. Turn off **Ask Where to Save** and turn on **Overwrite If File Exists**.
-
-Run it once and allow Steps. The setup window has the same steps under **Build it by hand instead**.
-
-</details>
-
-### 3. Optional: a Mac without your iCloud
-
-For a work Mac, or any Mac signed in to another Apple Account:
-
-1. On your own Mac, open Settings › **iPhone** › **Connect with a code…** and copy the code.
-2. On your iPhone, add one action at the end of **Unsit Sync**: **Get Contents of URL**, with the URL shown in that window (`https://ntfy.sh/unsit-<your code>`), Method **POST**, Request Body **File**, and pick the **Text** variable.
-3. On the other Mac, install Unsit. In the setup window choose **This Mac isn't signed in to your iCloud? Connect with a code**, paste the code and click **Use this code**.
+Install Unsit there too. On the first setup screen choose **Already using Unsit on another Mac? Use its code**, and paste the code from your first Mac (Settings › **iPhone** › **Connect with a code…**). Both Macs then read the same steps, and the shortcut doesn't change.
 
 The code is the only thing protecting the channel: anyone who knows it can read your step count. Keep it to yourself. ntfy.sh keeps each message for 12 hours.
 
