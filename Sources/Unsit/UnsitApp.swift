@@ -1,7 +1,7 @@
 //  UnsitApp.swift — Unsit v0.1
 //  A Mac menu bar app that gets you to 10,000 steps and enough water.
 //  Steps arrive from iPhone through the "Unsit Sync" shortcut (iCloud Drive).
-//  Includes: guided setup, menu bar panel, corner mode, gap nudge.
+//  Includes: guided setup, menu bar panel, gap nudge, settings.
 //  Requires macOS 14+. Built by scripts/build-app.sh (not sandboxed).
 
 import SwiftUI
@@ -89,7 +89,7 @@ struct MenuBarLabel: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: model.isNudging ? "figure.walk" : "arrow.up")
+            Image(systemName: model.goalReached ? "checkmark.circle" : (model.isNudging ? "figure.walk.motion" : "figure.walk"))
             Text(model.menuTitle)
         }
         .onAppear {
@@ -141,8 +141,7 @@ final class UnsitModel: ObservableObject {
     /// Workday start and end, in minutes after midnight (540 = 09:00).
     @Published var dayStartMinute: Int { didSet { defaults.set(dayStartMinute, forKey: "dayStartMinute"); workdayChanged() } }
     @Published var dayEndMinute: Int { didSet { defaults.set(dayEndMinute, forKey: "dayEndMinute"); workdayChanged() } }
-    @Published var cornerMode: Bool { didSet { defaults.set(cornerMode, forKey: "cornerMode"); applyMode() } }
-    @Published var onboarded: Bool { didSet { defaults.set(onboarded, forKey: "onboarded"); applyMode() } }
+    @Published var onboarded: Bool { didSet { defaults.set(onboarded, forKey: "onboarded") } }
     @Published var paused = false { didSet { evaluateNudge() } }
     /// A steps file the person picked by hand, used before the usual locations.
     @Published var customStepsPath: String? { didSet { defaults.set(customStepsPath, forKey: "customStepsPath") } }
@@ -172,7 +171,6 @@ final class UnsitModel: ObservableObject {
         glassML = d.object(forKey: "glassML") as? Int ?? 250
         dayStartMinute = d.object(forKey: "dayStartMinute") as? Int ?? 9 * 60
         dayEndMinute = d.object(forKey: "dayEndMinute") as? Int ?? 19 * 60
-        cornerMode = d.bool(forKey: "cornerMode")
         onboarded = d.bool(forKey: "onboarded")
         customStepsPath = d.string(forKey: "customStepsPath")
         dayKeyInUse = Self.dayKey(Date())
@@ -194,7 +192,6 @@ final class UnsitModel: ObservableObject {
                 Task { @MainActor in self?.isAway = true }
             }
         }
-        applyMode()
     }
 
     func tick() {
@@ -524,16 +521,6 @@ final class UnsitModel: ObservableObject {
         evaluateNudge()
     }
 
-    // MARK: Mode
-
-    func applyMode() {
-        if cornerMode && onboarded {
-            CornerPanelController.shared.show(model: self)
-        } else {
-            CornerPanelController.shared.hide()
-        }
-    }
-
     static func dayKey(_ d: Date) -> String {
         let c = Calendar.current.dateComponents([.year, .month, .day], from: d)
         return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
@@ -833,7 +820,7 @@ struct SettingsMenu: View {
 
     var body: some View {
         Menu {
-            Toggle("Corner mode", isOn: $model.cornerMode)
+            Toggle("Open at login", isOn: openAtLoginBinding)
             Button("Settings…") {
                 openWindow(id: "settings")
                 NSApp.activate()
@@ -916,12 +903,7 @@ struct SettingsView: View {
                     ForEach([200, 250, 330, 500], id: \.self) { Text("\($0) ml").tag($0) }
                 }
             }
-            Section("Where Unsit lives") {
-                Picker("Show in", selection: $model.cornerMode) {
-                    Text("Menu bar").tag(false)
-                    Text("Screen corner").tag(true)
-                }
-                .pickerStyle(.segmented)
+            Section("General") {
                 Toggle("Open at login", isOn: openAtLoginBinding)
             }
             Section("Steps from iPhone") {
@@ -934,47 +916,11 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Floating panels (corner mode and nudge)
+// MARK: - Floating panel (nudge)
 
 final class FloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
-}
-
-@MainActor
-final class CornerPanelController {
-    static let shared = CornerPanelController()
-    private var panel: FloatingPanel?
-    let collapsedSize = NSSize(width: 170, height: 170)
-    let expandedSize = NSSize(width: 380, height: 520)
-
-    func show(model: UnsitModel) {
-        if panel == nil {
-            let p = FloatingPanel(contentRect: NSRect(origin: .zero, size: collapsedSize),
-                                  styleMask: [.borderless, .nonactivatingPanel],
-                                  backing: .buffered, defer: false)
-            p.isOpaque = false
-            p.backgroundColor = .clear
-            p.hasShadow = true
-            p.level = .floating
-            p.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-            p.isMovable = false
-            p.contentView = NSHostingView(rootView: CornerRoot().environmentObject(model))
-            panel = p
-        }
-        resize(expanded: false)
-        panel?.orderFrontRegardless()
-    }
-
-    func hide() { panel?.orderOut(nil) }
-
-    func resize(expanded: Bool) {
-        guard let p = panel, let screen = NSScreen.main else { return }
-        let size = expanded ? expandedSize : collapsedSize
-        let vf = screen.visibleFrame
-        p.setFrame(NSRect(x: vf.maxX - size.width, y: vf.minY, width: size.width, height: size.height),
-                   display: true, animate: false)
-    }
 }
 
 @MainActor
@@ -1011,120 +957,6 @@ final class NudgePanelController {
     }
 
     func hide() { panel?.orderOut(nil) }
-}
-
-// MARK: - Corner mode
-
-func quarterArc(_ c: CGPoint, _ r: CGFloat, _ f0: Double, _ f1: Double) -> Path {
-    // f = 0 points left of the corner, f = 1 points straight up.
-    var p = Path()
-    let n = max(2, Int((f1 - f0) * 80))
-    for i in 0...n {
-        let f = f0 + (f1 - f0) * Double(i) / Double(n)
-        let a = Double.pi * (1 + 0.5 * f)
-        let pt = CGPoint(x: c.x + r * CGFloat(cos(a)), y: c.y + r * CGFloat(sin(a)))
-        if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
-    }
-    return p
-}
-
-struct QuarterDisc: Shape {
-    func path(in r: CGRect) -> Path {
-        var p = quarterArc(CGPoint(x: r.maxX, y: r.maxY), r.width, 0, 1)
-        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
-        p.closeSubpath()
-        return p
-    }
-}
-
-struct CornerRoot: View {
-    @EnvironmentObject var model: UnsitModel
-    @State private var expanded = false
-
-    var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            if expanded {
-                PanelView()
-                    .frame(width: 380)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .background(Color(nsColor: .windowBackgroundColor))
-                    .clipShape(UnevenRoundedRectangle(topLeadingRadius: 26, style: .continuous))
-            } else {
-                CornerCollapsed()
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-        .onHover { inside in
-            guard inside != expanded else { return }
-            expanded = inside
-            CornerPanelController.shared.resize(expanded: inside)
-        }
-    }
-}
-
-struct CornerCollapsed: View {
-    @EnvironmentObject var model: UnsitModel
-
-    var body: some View {
-        GeometryReader { geo in
-            let s = geo.size.width
-            let c = CGPoint(x: s, y: s)
-            let outer = s * 0.89
-            let inner = s * 0.78
-            ZStack(alignment: .bottomTrailing) {
-                QuarterDisc().fill(Color(white: 0.08).opacity(0.92))
-
-                // Outer ring: steps, with the pace tick
-                quarterArc(c, outer, 0, 1)
-                    .stroke(Color.white.opacity(0.14), style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                if model.stepProgress > 0 {
-                    quarterArc(c, outer, 0, model.stepProgress)
-                        .stroke(Color.white, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                }
-                Path { p in
-                    let a = Double.pi * (1 + 0.5 * model.dayFraction)
-                    p.move(to: CGPoint(x: c.x + (outer - 9) * CGFloat(cos(a)), y: c.y + (outer - 9) * CGFloat(sin(a))))
-                    p.addLine(to: CGPoint(x: c.x + (outer + 9) * CGFloat(cos(a)), y: c.y + (outer + 9) * CGFloat(sin(a))))
-                }
-                .stroke(Color.unsitSignal, style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
-
-                // Inner ring: the day, meetings and the next gap
-                quarterArc(c, inner, 0, 1).stroke(Color.white.opacity(0.10), lineWidth: 6)
-                ForEach(model.events) { e in
-                    let f0 = model.fraction(of: e.start)
-                    let f1 = model.fraction(of: e.end)
-                    if f1 - f0 > 0.01 {
-                        quarterArc(c, inner, f0 + 0.004, f1 - 0.004).stroke(Color.white.opacity(0.38), lineWidth: 6)
-                    }
-                }
-                if let g = model.nextGap, !model.goalReached {
-                    let f0 = model.fraction(of: g.start)
-                    let f1 = model.fraction(of: g.end)
-                    if f1 - f0 > 0.01 {
-                        quarterArc(c, inner, f0 + 0.004, f1 - 0.004).stroke(Color.unsitSignal, lineWidth: 6)
-                    }
-                }
-
-                VStack(alignment: .trailing, spacing: 3) {
-                    if let g = model.nextGap, !model.goalReached {
-                        Text(g.start <= model.now ? "Gap until \(timeText(g.end))" : "Gap at \(timeText(g.start))")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.unsitSignal)
-                    }
-                    Text(model.steps.formatted())
-                        .font(.system(size: 30, weight: .semibold).monospacedDigit())
-                        .tracking(-1)
-                        .foregroundStyle(.white)
-                    Text(model.paceText)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.white.opacity(0.6))
-                }
-                .padding(.trailing, 18)
-                .padding(.bottom, 16)
-            }
-        }
-        .frame(width: 170, height: 170)
-    }
 }
 
 // MARK: - Nudge
@@ -1419,18 +1251,8 @@ struct OnboardingView: View {
                 WorkdayPickers()
             }
             .padding(.top, 18)
-            HStack {
-                Text("Where should Unsit live?").font(.system(size: 12.5)).foregroundStyle(.secondary)
-                Spacer()
-                Picker("", selection: $model.cornerMode) {
-                    Text("Menu bar").tag(false)
-                    Text("Screen corner").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 240)
-            }
-            .padding(.top, 20)
+            Toggle("Open Unsit when you log in", isOn: openAtLoginBinding)
+                .padding(.top, 18)
             Spacer()
             HStack {
                 Spacer()
