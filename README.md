@@ -8,7 +8,7 @@
 
 A macOS menu bar app that gets you to 10,000 steps and enough water during the workday. It reads your calendar, finds the gaps between meetings, and tells you when to walk. Your steps arrive from your iPhone and Apple Watch on their own.
 
-[![Version 0.2.2](https://img.shields.io/badge/version-0.2.2-2F7DF6)](Resources/Info.plist)
+[![Version 0.3.0](https://img.shields.io/badge/version-0.3.0-2F7DF6)](Resources/Info.plist)
 [![License: Sustainable Use 1.0](https://img.shields.io/badge/license-Sustainable%20Use%201.0-8B5CF6)](LICENSE.md)
 [![Build](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml/badge.svg)](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white)
@@ -79,6 +79,14 @@ When a gap between meetings opens and you're more than 300 steps behind pace, a 
 </td>
 </tr>
 <tr>
+<td colspan="2" valign="top">
+
+### 💼 Works on your work Mac too
+No iCloud on that Mac? Connect it with a **code**. Your iPhone sends today's steps to the code through [ntfy.sh](https://ntfy.sh), and every Mac with the same code reads them, at the same time as your own Mac.
+
+</td>
+</tr>
+<tr>
 <td valign="top">
 
 ### 💧 Water in glasses
@@ -108,6 +116,8 @@ flowchart LR
     H --> S["Unsit Sync shortcut<br/>(runs on its own)"]
     S --> I["iCloud Drive<br/>Shortcuts/Unsit/steps.json"]
     I --> U{{"Unsit<br/>on your Mac"}}
+    S -. "optional: your code" .-> R["ntfy.sh<br/>unsit-&lt;code&gt;"]
+    R -.-> U
     C["Calendar.app<br/>your meetings"] --> U
     U --> P["Menu bar panel<br/>steps · gaps · water"]
     U --> N["Nudge when a gap opens<br/>and you're behind"]
@@ -120,6 +130,8 @@ Apple Health isn't available on the Mac, so the iPhone does the reading. The **U
 ```
 
 Unsit checks that file every 15 seconds and only uses it when it's from today.
+
+**Macs without your iCloud.** The shortcut can also post the same text to `https://ntfy.sh/unsit-<code>`, where the code is a random 20-character string that Unsit makes for you. Each Mac with that code asks ntfy.sh for the latest message once a minute. When both arrive, the newer one from today wins.
 
 **Pace.** At any moment of your workday you should have walked that share of your goal: halfway through a 09:00 to 19:00 day, that's 5,000 of 10,000. The difference is how far behind you are.
 
@@ -170,13 +182,24 @@ Run it once and allow Steps. The setup window has the same steps under **Build i
 
 </details>
 
-### 3. Allow your calendar
+### 3. Optional: a Mac without your iCloud
+
+For a work Mac, or any Mac signed in to another Apple Account:
+
+1. On your own Mac, open Settings › **iPhone** › **Connect with a code…** and copy the code.
+2. On your iPhone, add one action at the end of **Unsit Sync**: **Get Contents of URL**, with the URL shown in that window (`https://ntfy.sh/unsit-<your code>`), Method **POST**, Request Body **File**, and pick the **Text** variable.
+3. On the other Mac, install Unsit. In the setup window choose **This Mac isn't signed in to your iCloud? Connect with a code**, paste the code and click **Use this code**.
+
+The code is the only thing protecting the channel: anyone who knows it can read your step count. Keep it to yourself. ntfy.sh keeps each message for 12 hours.
+
+### 4. Allow your calendar
 
 The last setup step shows your day on the strip and asks for calendar access. Set your workday hours there too; you can change them later in Settings. Turn on **Open Unsit when you log in** to keep it running.
 
 ### Troubleshooting
 
 - **The count doesn't change, or setup says there's no steps file yet.** On your iPhone, open **Files** › iCloud Drive › Shortcuts › Unsit and check that `steps.json` (or `steps.txt`) is there. On the Mac, Settings › **iPhone** › **Choose steps file…** points Unsit at the file by hand.
+- **A Mac with a code shows no steps.** Settings › **iPhone** shows when steps last came through the code. Check the code is the same on both Macs and in the shortcut's URL. In Terminal, `curl -s "https://ntfy.sh/unsit-<your code>/json?poll=1&since=latest"` shows the last message the iPhone sent. Some company networks block ntfy.sh.
 - **Steps look doubled, or show two numbers.** In the shortcut, Group By must be **Day** and **Fill Missing** must be off.
 - **macOS asks for calendar access again after a rebuild.** Builds are ad-hoc signed, so macOS treats each one as a new app. See [Keep calendar access between builds](#keep-calendar-access-between-builds).
 - **No icon in the menu bar.** When the menu bar is full, macOS hides icons that don't fit. Quit an app with an icon there, or ⌘-drag icons to make room.
@@ -249,7 +272,8 @@ The version lives in [`Resources/Info.plist`](Resources/Info.plist). It's what S
 - **iPhone only for now.** Steps come from Apple Health through an iPhone shortcut. Android phones are coming soon.
 - **Steps arrive when the shortcut runs**, not live. With the automations above, that's several times an hour.
 - **No desktop widgets yet.** Widgets need App Groups, which need the paid developer account.
-- **Not sandboxed**, so it can read the shortcut's file in iCloud Drive. Unsit reads only that file and your calendar, and only goes online to check GitHub for a newer version.
+- **Not sandboxed**, so it can read the shortcut's file in iCloud Drive. Unsit reads only that file and your calendar. It goes online only to check GitHub for a newer version and, once a minute, to read your code on ntfy.sh.
+- **The code route uses a third-party server.** Only the step count and the time go through ntfy.sh, on a channel named after your code. Water still stays on each Mac.
 
 ## Licence
 

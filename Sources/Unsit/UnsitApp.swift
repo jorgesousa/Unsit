@@ -41,6 +41,10 @@ enum UnsitConfig {
     static let repoPage = URL(string: "https://github.com/\(repo)")!
     static let releaseAPI = URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
     static let mainInfoPlist = URL(string: "https://raw.githubusercontent.com/\(repo)/main/Resources/Info.plist")!
+    /// Steps can also arrive through ntfy.sh, for Macs that aren't signed in to your iCloud.
+    /// The shortcut posts to https://ntfy.sh/unsit-<code>; each Mac reads the latest message.
+    static let relayServer = "https://ntfy.sh"
+    static let relayEvery: TimeInterval = 60
     static let awayAfter: TimeInterval = 5 * 60
     static let stepsPerMinute = 100.0
 }
@@ -322,6 +326,14 @@ struct StepsFile: Decodable {
     }
 }
 
+/// One reading of today's steps and where it came from.
+struct StepsReading: Equatable {
+    enum Source { case file, relay }
+    let steps: Int
+    let at: Date
+    let source: Source
+}
+
 @MainActor
 final class UnsitModel: ObservableObject {
     // Settings (saved)
@@ -341,6 +353,15 @@ final class UnsitModel: ObservableObject {
     func resumeNudges() { pausedUntil = nil }
     /// A steps file the person picked by hand, used before the usual locations.
     @Published var customStepsPath: String? { didSet { defaults.set(customStepsPath, forKey: "customStepsPath") } }
+    /// The private code the shortcut posts steps to. Same code on every Mac = same steps.
+    @Published private(set) var relayCode: String {
+        didSet {
+            defaults.set(relayCode, forKey: "relayCode")
+            relayReading = nil
+            relayReached = nil
+            lastRelayPoll = .distantPast
+        }
+    }
 
     // Live state
     @Published private(set) var now = Date()
@@ -352,6 +373,14 @@ final class UnsitModel: ObservableObject {
     @Published private(set) var calendarAllowed = false
     @Published private(set) var isAway = false
     @Published private(set) var isNudging = false
+    /// Whether ntfy.sh answered the last time we asked (nil: not asked yet).
+    @Published private(set) var relayReached: Bool?
+    /// The newest reading from each source. The newer one from today wins.
+    @Published private(set) var relayReading: StepsReading?
+    private var fileReading: StepsReading?
+    private var fileStatus: String?
+    private var fileMissing = false
+    private var lastRelayPoll = Date.distantPast
 
     private let defaults = UserDefaults.standard
     private let store = EKEventStore()
@@ -369,6 +398,13 @@ final class UnsitModel: ObservableObject {
         dayEndMinute = d.object(forKey: "dayEndMinute") as? Int ?? 19 * 60
         onboarded = d.bool(forKey: "onboarded")
         customStepsPath = d.string(forKey: "customStepsPath")
+        if let saved = d.string(forKey: "relayCode"), Self.isValidRelayCode(saved) {
+            relayCode = saved
+        } else {
+            let fresh = Self.newRelayCode()
+            relayCode = fresh
+            d.set(fresh, forKey: "relayCode")
+        }
         dayKeyInUse = Self.dayKey(Date())
         waterML = d.integer(forKey: "water-" + dayKeyInUse)
     }
@@ -412,14 +448,41 @@ final class UnsitModel: ObservableObject {
         dayKeyInUse = key
         steps = 0
         stepsUpdatedAt = nil
+        fileReading = nil
+        relayReading = nil
         waterML = defaults.integer(forKey: "water-" + key)
         events = []
         lastEventsFetch = .distantPast
     }
 
-    // MARK: Steps (from the shortcut's file)
+    // MARK: Steps (from the shortcut's file, or through the pairing code)
 
     func refreshSteps() {
+        readFile()
+        if now.timeIntervalSince(lastRelayPoll) >= UnsitConfig.relayEvery {
+            lastRelayPoll = now
+            Task { await pollRelay() }
+        }
+        applyReadings()
+    }
+
+    /// Shows the newest reading from today, whichever way it came.
+    private func applyReadings() {
+        let today = [fileReading, relayReading].compactMap { $0 }
+            .filter { Calendar.current.isDate($0.at, inSameDayAs: now) }
+        if let best = today.max(by: { $0.at < $1.at }) {
+            steps = best.steps
+            stepsUpdatedAt = best.at
+            stepsStatus = nil
+        } else if fileMissing && relayReached == true {
+            // A Mac without the iCloud file: the code is the way in, so talk about that.
+            stepsStatus = "No steps yet today. Run Unsit Sync on your iPhone; it sends them to this Mac through your code."
+        } else {
+            stepsStatus = fileStatus
+        }
+    }
+
+    private func readFile() {
         let fm = FileManager.default
         func modified(_ u: URL) -> Date {
             ((try? fm.attributesOfItem(atPath: u.path))?[.modificationDate] as? Date) ?? .distantPast
@@ -443,38 +506,31 @@ final class UnsitModel: ObservableObject {
             }
             if let p = placeholders.first {
                 try? fm.startDownloadingUbiquitousItem(at: p)
-                stepsStatus = "Found the file in iCloud Drive. Downloading it now…"
+                fileStatus = "Found the file in iCloud Drive. Downloading it now…"
             } else if fm.fileExists(atPath: folder.path) {
                 let names = (try? fm.contentsOfDirectory(atPath: folder.path)) ?? []
-                stepsStatus = names.isEmpty
+                fileStatus = names.isEmpty
                     ? "The Unsit folder is there but empty. Run Unsit Sync on your iPhone."
                     : "The Unsit folder has \(names.joined(separator: ", ")) but no steps file. Check the file name in the shortcut's Save File action."
             } else {
-                stepsStatus = "No Unsit folder in iCloud Drive › Shortcuts yet. Run Unsit Sync on your iPhone, and check Save File points to Shortcuts › Unsit."
+                fileStatus = "No Unsit folder in iCloud Drive › Shortcuts yet. Run Unsit Sync on your iPhone, and check Save File points to Shortcuts › Unsit."
             }
+            fileMissing = true
             return
         }
+        fileMissing = false
 
         let raw: Data
         do {
             raw = try Data(contentsOf: url)
         } catch {
-            stepsStatus = "Unsit can't open \(url.lastPathComponent) (\(error.localizedDescription)). Allow it under System Settings › Privacy & Security › Files and Folders."
+            fileStatus = "Unsit can't open \(url.lastPathComponent) (\(error.localizedDescription)). Allow it under System Settings › Privacy & Security › Files and Folders."
             return
         }
 
-        // The iPhone keyboard often turns straight quotes into curly ones; accept both.
-        let text = (String(data: raw, encoding: .utf8) ?? "")
-            .replacingOccurrences(of: "\u{201C}", with: "\"")
-            .replacingOccurrences(of: "\u{201D}", with: "\"")
-            .replacingOccurrences(of: "\u{201E}", with: "\"")
-            .replacingOccurrences(of: "\u{2033}", with: "\"")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            // Several days arrive as raw line breaks inside the value, which JSON doesn't allow.
-            .replacingOccurrences(of: "\r\n", with: "\\n")
-            .replacingOccurrences(of: "\n", with: "\\n")
-        guard let file = try? JSONDecoder().decode(StepsFile.self, from: Data(text.utf8)) else {
-            stepsStatus = "Found \(url.lastPathComponent) but couldn't read it. It contains: \(text.prefix(120))"
+        let text = String(data: raw, encoding: .utf8) ?? ""
+        guard let file = Self.parseSteps(text) else {
+            fileStatus = "Found \(url.lastPathComponent) but couldn't read it. It contains: \(text.prefix(120))"
             return
         }
 
@@ -484,14 +540,12 @@ final class UnsitModel: ObservableObject {
         }
         guard let when = stamp, Calendar.current.isDate(when, inSameDayAs: now) else {
             let day = stamp.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "an unknown day"
-            stepsStatus = "Found steps from \(day), not today. Run Unsit Sync on your iPhone again."
+            fileStatus = "Found steps from \(day), not today. Run Unsit Sync on your iPhone again."
             return
         }
 
-        let newSteps = Int(file.steps.rounded())
-        steps = newSteps
-        stepsUpdatedAt = when
-        stepsStatus = nil
+        fileReading = StepsReading(steps: Int(file.steps.rounded()), at: when, source: .file)
+        fileStatus = nil
     }
 
     /// Lets the person point Unsit at the steps file in Finder, once.
@@ -511,6 +565,100 @@ final class UnsitModel: ObservableObject {
             customStepsPath = url.path
             refreshSteps()
         }
+    }
+
+    /// Reads the shortcut's JSON, from the file or from a ntfy message.
+    static func parseSteps(_ raw: String) -> StepsFile? {
+        // The iPhone keyboard often turns straight quotes into curly ones; accept both.
+        let text = raw
+            .replacingOccurrences(of: "\u{201C}", with: "\"")
+            .replacingOccurrences(of: "\u{201D}", with: "\"")
+            .replacingOccurrences(of: "\u{201E}", with: "\"")
+            .replacingOccurrences(of: "\u{2033}", with: "\"")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            // Several days arrive as raw line breaks inside the value, which JSON doesn't allow.
+            .replacingOccurrences(of: "\r\n", with: "\\n")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        return try? JSONDecoder().decode(StepsFile.self, from: Data(text.utf8))
+    }
+
+    // MARK: Pairing code (ntfy.sh)
+
+    var relayTopic: String { "unsit-" + relayCode }
+    var relayURL: URL { URL(string: "\(UnsitConfig.relayServer)/\(relayTopic)")! }
+
+    /// Asks ntfy.sh for the newest message on our code. Messages carry the shortcut's JSON as text.
+    func pollRelay() async {
+        guard let url = URL(string: "\(UnsitConfig.relayServer)/\(relayTopic)/json?poll=1&since=latest") else { return }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        request.setValue("Unsit", forHTTPHeaderField: "User-Agent")
+        guard let reply = try? await URLSession.shared.data(for: request),
+              (reply.1 as? HTTPURLResponse)?.statusCode == 200 else {
+            relayReached = false
+            return
+        }
+        relayReached = true
+        let lines = String(decoding: reply.0, as: UTF8.self).split(whereSeparator: \.isNewline)
+        for line in lines.reversed() {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  object["event"] as? String == "message",
+                  let message = object["message"] as? String,
+                  let file = Self.parseSteps(message) else { continue }
+            // The shortcut's date often has no time; ntfy's own send time is exact.
+            let sent = (object["time"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
+            guard let at = sent ?? Self.parseDate(file.updatedAt) else { continue }
+            relayReading = StepsReading(steps: Int(file.steps.rounded()), at: at, source: .relay)
+            break
+        }
+        applyReadings()
+    }
+
+    /// "Check now": read the file and ask ntfy.sh straight away.
+    func checkNow() {
+        lastRelayPoll = .distantPast
+        refreshSteps()
+    }
+
+    /// Takes the code from another Mac, so both read the same steps.
+    func useRelayCode(_ entered: String) {
+        let code = Self.normalizedRelayCode(entered)
+        guard Self.isValidRelayCode(code), code != relayCode else { return }
+        relayCode = code
+        refreshSteps()
+    }
+
+    /// 20 characters in groups of four, without look-alikes (0/o, 1/l/i). Random, so hard to guess.
+    static func newRelayCode() -> String {
+        let alphabet = Array("abcdefghjkmnpqrstuvwxyz23456789")
+        var rng = SystemRandomNumberGenerator()
+        let raw = String((0..<20).map { _ in alphabet.randomElement(using: &rng)! })
+        return normalizedRelayCode(raw)
+    }
+
+    static func normalizedRelayCode(_ s: String) -> String {
+        let chars = s.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        var groups: [String] = []
+        var current = ""
+        for c in chars {
+            current.append(c)
+            if current.count == 4 { groups.append(current); current = "" }
+        }
+        if !current.isEmpty { groups.append(current) }
+        return groups.joined(separator: "-")
+    }
+
+    static func isValidRelayCode(_ s: String) -> Bool {
+        let chars = s.filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        return chars.count >= 16 && chars.count <= 40
+    }
+
+    /// For Settings: when steps last came through the code.
+    var relayText: String {
+        if relayReached == false { return "Couldn't reach ntfy.sh. Check the network." }
+        guard let r = relayReading, Calendar.current.isDate(r.at, inSameDayAs: now) else {
+            return relayReached == true ? "Nothing sent to this code today yet." : "Checking…"
+        }
+        return "\(r.steps.formatted()) steps at \(timeText(r.at))"
     }
 
     static func parseDate(_ s: String) -> Date? {
@@ -1381,6 +1529,7 @@ struct GeneralSettings: View {
 
 struct PhoneSettings: View {
     @EnvironmentObject var model: UnsitModel
+    @State private var showCode = false
 
     var body: some View {
         Form {
@@ -1402,11 +1551,22 @@ struct PhoneSettings: View {
                     .foregroundStyle(.secondary)
             }
             Section {
+                LabeledContent("Code", value: model.relayCode)
+                LabeledContent("Last steps by code", value: model.relayText)
+                Button("Connect with a code…") { showCode = true }
+            } header: {
+                Text("Macs without your iCloud")
+            } footer: {
+                Text("Your iPhone can also send steps to this code through ntfy.sh, so a work Mac gets them without your iCloud. Use the same code on every Mac.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Button("Choose steps file…") { model.chooseStepsFile() }
                 Button("Set up the iPhone again…") { WindowRouter.shared.showOnboarding() }
             }
         }
         .formStyle(.grouped)
+        .sheet(isPresented: $showCode) { RelayCodeSheet().environmentObject(model) }
         .frame(width: SettingsTabs.size.width, height: SettingsTabs.size.height)
     }
 }
@@ -1701,6 +1861,7 @@ struct OnboardingView: View {
     @State private var timesDone = false
     @State private var appsDone = false
     @State private var showManual = false
+    @State private var showCode = false
 
     private let titles = ["Add the shortcut", "Run it once", "Keep it fresh", "Find your gaps"]
 
@@ -1715,7 +1876,8 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(width: 820, height: 560)
-        .sheet(isPresented: $showManual) { ManualShortcutSheet() }
+        .sheet(isPresented: $showManual) { ManualShortcutSheet().environmentObject(model) }
+        .sheet(isPresented: $showCode) { RelayCodeSheet().environmentObject(model) }
     }
 
     private var rail: some View {
@@ -1842,7 +2004,7 @@ struct OnboardingView: View {
                     }
                 } else {
                     VStack(alignment: .trailing, spacing: 6) {
-                        Button("Check now") { model.refreshSteps() }
+                        Button("Check now") { model.checkNow() }
                         Button("Choose the file…") { model.chooseStepsFile() }
                             .buttonStyle(.link)
                             .font(.system(size: 12))
@@ -1858,6 +2020,10 @@ struct OnboardingView: View {
                 .font(.system(size: 12.5)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 14)
+            Button("This Mac isn't signed in to your iCloud? Connect with a code") { showCode = true }
+                .buttonStyle(.link)
+                .font(.system(size: 12.5))
+                .padding(.top, 8)
             Spacer()
             HStack {
                 Spacer()
@@ -1942,17 +2108,94 @@ struct OnboardingView: View {
     }
 }
 
-struct ManualShortcutSheet: View {
+/// Steps without iCloud: the shortcut posts to ntfy.sh/unsit-<code>, and every Mac with that code reads it.
+struct RelayCodeSheet: View {
+    @EnvironmentObject var model: UnsitModel
     @Environment(\.dismiss) private var dismiss
-    private let steps = [
+    @State private var entered = ""
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Connect with a code").font(.system(size: 18, weight: .semibold))
+            Text("For a Mac that isn't signed in to your iCloud, like a work laptop. Your iPhone sends today's steps to this code, and every Mac with the same code reads them.")
+                .font(.system(size: 13)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
+
+            Text("This Mac's code").font(.system(size: 12, weight: .semibold)).padding(.top, 20)
+            HStack {
+                Text(model.relayCode)
+                    .font(.system(size: 16, design: .monospaced))
+                    .textSelection(.enabled)
+                Spacer()
+                Button("Copy") { copy(model.relayCode) }
+            }
+            .padding(.top, 6)
+
+            Text("Already have a code on another Mac? Use that one here.")
+                .font(.system(size: 12, weight: .semibold)).padding(.top, 18)
+            HStack {
+                TextField("xxxx-xxxx-xxxx-xxxx-xxxx", text: $entered)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 13, design: .monospaced))
+                Button("Use this code") {
+                    model.useRelayCode(entered)
+                    entered = ""
+                }
+                .disabled(!UnsitModel.isValidRelayCode(entered))
+            }
+            .padding(.top, 6)
+
+            Divider().padding(.vertical, 18)
+
+            Text("On your iPhone, add one action at the end of Unsit Sync:")
+                .font(.system(size: 13))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Get Contents of URL").fontWeight(.semibold)
+                Text(model.relayURL.absoluteString).textSelection(.enabled)
+                Text("Method POST · Request Body File · pick Text").foregroundStyle(.secondary)
+            }
+            .font(.system(size: 12.5, design: .monospaced))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.05)))
+            .padding(.top, 8)
+
+            Text(model.relayText)
+                .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                .padding(.top, 10)
+
+            HStack {
+                Button("Copy URL") { copy(model.relayURL.absoluteString) }
+                Button("Check now") { model.checkNow() }
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            .padding(.top, 18)
+        }
+        .padding(24)
+        .frame(width: 480)
+    }
+}
+
+struct ManualShortcutSheet: View {
+    @EnvironmentObject var model: UnsitModel
+    @Environment(\.dismiss) private var dismiss
+    private var steps: [String] { [
         "Open Shortcuts on your iPhone, tap + and name the shortcut \"Unsit Sync\".",
         "Add Find Health Samples: Type is Steps, Start Date is today, Group By Day, Fill Missing off.",
         "Add Get Details of Health Samples and choose Value.",
         "Add Round Number, to Integer.",
         "Add Text: {\"steps\": \"[Rounded Number]\", \"updatedAt\": \"[Current Date]\"}. Set Current Date to ISO 8601 with time.",
         "Add Save File to Shortcuts/Unsit/steps.json. Turn off Ask Where to Save, turn on Overwrite.",
+        "Optional, for Macs without your iCloud: add Get Contents of URL to \(model.relayURL.absoluteString), Method POST, Request Body File, and pick Text.",
         "Run it once and allow Steps when Health asks."
-    ]
+    ] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
