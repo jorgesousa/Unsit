@@ -619,6 +619,15 @@ final class UnsitModel: ObservableObject {
         refreshSteps()
     }
 
+    /// The panel's refresh button: steps from the file and the code, and the calendar, right now.
+    func refreshAll() {
+        now = Date()
+        lastEventsFetch = .distantPast
+        checkNow()
+        if calendarAllowed { fetchEvents() }
+        evaluateNudge()
+    }
+
     /// A fresh private code. The shortcut's URL has to change with it.
     func makeNewRelayCode() {
         relayCode = Self.newRelayCode()
@@ -1368,11 +1377,38 @@ struct PanelView: View {
                     .font(.system(size: 11.5, weight: model.syncIsStale ? .semibold : .regular))
                     .foregroundStyle(model.syncIsStale ? Color.unsitSignal : Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                RefreshButton()
                 Spacer(minLength: 8)
                 PauseMenu()
             }
         }
         .padding(18)
+    }
+}
+
+/// Footer: fetch steps and meetings now instead of waiting for the next check. ⌘R works too.
+/// It can't make the iPhone send; it picks up whatever the shortcut sent last.
+struct RefreshButton: View {
+    @EnvironmentObject var model: UnsitModel
+    @State private var turns = 0
+
+    var body: some View {
+        Button {
+            turns += 1
+            model.refreshAll()
+        } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(Double(turns) * 360))
+                .animation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.5), value: turns)
+                .frame(width: 18, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut("r", modifiers: .command)
+        .help("Refresh now (⌘R)")
+        .accessibilityLabel("Refresh steps and meetings")
     }
 }
 

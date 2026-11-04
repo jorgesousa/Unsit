@@ -8,7 +8,7 @@
 
 A macOS menu bar app that gets you to 10,000 steps and enough water during the workday. It reads your calendar, finds the gaps between meetings, and tells you when to walk. Your steps arrive from your iPhone and Apple Watch on their own.
 
-[![Version 0.3.1](https://img.shields.io/badge/version-0.3.1-2F7DF6)](Resources/Info.plist)
+[![Version 0.3.2](https://img.shields.io/badge/version-0.3.2-2F7DF6)](Resources/Info.plist)
 [![License: Sustainable Use 1.0](https://img.shields.io/badge/license-Sustainable%20Use%201.0-8B5CF6)](LICENSE.md)
 [![Build](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml/badge.svg)](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white)
@@ -104,7 +104,7 @@ No nudges during a meeting, while you're away from the Mac (idle for 5 minutes o
 
 <p align="center"><img src="docs/menu-bar.png" width="400" alt="The Unsit panel in dark mode: 60 of 10,000 steps, 3 h 50 min free of meetings today, the day's meetings and gaps on a strip from 09 to 17, and 0.75 of 2 litres of water"></p>
 
-The menu bar shows today's steps next to a walking figure. The panel's footer says when steps last arrived from your iPhone, and turns orange when that was more than 90 minutes ago, so you notice if an automation stops.
+The menu bar shows today's steps next to a walking figure. The panel's footer says when steps last arrived from your iPhone, and turns orange when that was more than 90 minutes ago, so you notice if an automation stops. The ↻ button next to it (or ⌘R) checks for new steps and meetings straight away.
 
 **Settings** has three tabs: **General** (workday hours, step and water goals, glass size, open at login), **iPhone** (when steps last arrived, choose the steps file by hand, set up the iPhone again) and **Author** (version and **Check for updates**). Unsit checks GitHub once a day for a newer version. When there is one, the gear menu shows **Update to …** and the Author tab shows how to update.
 
