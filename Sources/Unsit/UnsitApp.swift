@@ -364,6 +364,15 @@ final class UnsitModel: ObservableObject {
         defaults.set(waterML, forKey: "water-" + dayKeyInUse)
     }
 
+    /// Sets today's water to an exact number of glasses.
+    func setGlasses(_ count: Int) {
+        waterML = min(max(0, count) * glassML, waterGoalML * 2)
+        defaults.set(waterML, forKey: "water-" + dayKeyInUse)
+    }
+
+    var glassesDrunk: Int { waterML / max(1, glassML) }
+    var glassesGoal: Int { max(1, waterGoalML / max(1, glassML)) }
+
     // MARK: Day maths
 
     var dayStart: Date {
@@ -473,6 +482,10 @@ final class UnsitModel: ObservableObject {
         if mins < 1 { return "Steps from iPhone, just now" }
         if mins < 90 { return "Steps from iPhone, \(mins) min ago" }
         return "Steps from iPhone at \(timeText(d))"
+    }
+
+    var waterGoalText: String {
+        (Double(waterGoalML) / 1000).formatted(.number.precision(.fractionLength(0...2))) + " L"
     }
 
     var waterText: String {
@@ -656,22 +669,63 @@ struct Cup: Shape {
     }
 }
 
+/// Tap a cup to fill up to it; tap the last full cup to empty it.
+/// Hovering previews the result before you click.
 struct WaterCups: View {
     let filled: Int
-    let total: Int
+    let goal: Int
+    let onSet: (Int) -> Void
+    @State private var hovered: Int?
+
+    private var total: Int { max(goal, filled) }
+
+    private func target(for i: Int) -> Int { i == filled - 1 ? i : i + 1 }
+
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<max(1, total), id: \.self) { i in
-                Group {
-                    if i < filled {
-                        Cup().fill(Color.unsitWater)
-                    } else {
-                        Cup().stroke(Color.secondary.opacity(0.5), lineWidth: 1.3)
-                    }
+        HStack(spacing: 0) {
+            ForEach(0..<total, id: \.self) { i in
+                Button { onSet(target(for: i)) } label: {
+                    cup(i)
+                        .frame(width: 18, height: 22)
+                        .frame(maxWidth: .infinity, minHeight: 30)
+                        .contentShape(Rectangle())
                 }
-                .frame(width: 12, height: 15)
+                .buttonStyle(CupPressStyle())
+                .onHover { inside in hovered = inside ? i : (hovered == i ? nil : hovered) }
+                .help(i == filled - 1 ? "Remove this glass" : "Set to \(i + 1) glass\(i == 0 ? "" : "es")")
+                .accessibilityLabel("Glass \(i + 1) of \(goal)")
+                .accessibilityValue(i < filled ? "Full" : "Empty")
             }
         }
+        .animation(.easeOut(duration: 0.15), value: filled)
+        .animation(.easeOut(duration: 0.12), value: hovered)
+    }
+
+    @ViewBuilder private func cup(_ i: Int) -> some View {
+        let full = i < filled
+        let preview: Bool = {
+            guard let h = hovered else { return false }
+            let t = target(for: h)
+            return t > filled ? (i >= filled && i < t) : (i >= t && i < filled)
+        }()
+        let extra = i >= goal
+        ZStack {
+            if full {
+                Cup().fill(Color.unsitWater.opacity(preview ? 0.35 : 1))
+            } else {
+                Cup().fill(Color.unsitWater.opacity(preview ? 0.35 : 0))
+            }
+            Cup().stroke(full || preview ? Color.unsitWater : Color.secondary.opacity(extra ? 0.25 : 0.5),
+                         style: StrokeStyle(lineWidth: 1.4, dash: extra && !full ? [2, 2] : []))
+        }
+    }
+}
+
+struct CupPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
@@ -732,17 +786,30 @@ struct PanelView: View {
 
             Divider().padding(.vertical, 12)
 
-            HStack(spacing: 10) {
-                Text("Water").frame(width: 52, alignment: .leading).foregroundStyle(.secondary)
-                WaterCups(filled: model.waterML / max(1, model.glassML),
-                          total: model.waterGoalML / max(1, model.glassML))
-                Spacer(minLength: 4)
-                Text(model.waterText).fontWeight(.semibold)
-                Button("+ Glass") { model.addGlass() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(Color.unsitWater)
-                    .contextMenu { Button("Remove a glass") { model.removeGlass() } }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text("Water").foregroundStyle(.secondary)
+                    Spacer()
+                    Text(model.waterText).fontWeight(.semibold).monospacedDigit()
+                    + Text(" of \(model.waterGoalText)").foregroundColor(.secondary)
+                    HStack(spacing: 0) {
+                        Button { model.removeGlass() } label: {
+                            Image(systemName: "minus").frame(width: 26, height: 22)
+                        }
+                        .disabled(model.waterML == 0)
+                        .help("Remove a glass")
+                        Divider().frame(height: 14)
+                        Button { model.addGlass() } label: {
+                            Image(systemName: "plus").frame(width: 26, height: 22)
+                        }
+                        .help("Add a glass of \(model.glassML) ml")
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.unsitWater)
+                    .background(Capsule().fill(Color.unsitWater.opacity(0.12)))
+                }
+                WaterCups(filled: model.glassesDrunk, goal: model.glassesGoal) { model.setGlasses($0) }
             }
             .font(.system(size: 13))
 
