@@ -64,6 +64,10 @@ struct UnsitApp: App {
             PanelView()
                 .environmentObject(model)
                 .frame(width: 360)
+                // The window takes the panel's exact height, and the panel paints edge to edge,
+                // so no band of the system window shows above or below it.
+                .fixedSize(horizontal: false, vertical: true)
+                .background(.background, ignoresSafeAreaEdges: .all)
         } label: {
             MenuBarLabel().environmentObject(model)
         }
