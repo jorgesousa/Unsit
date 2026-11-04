@@ -8,7 +8,7 @@
 
 A macOS menu bar app that gets you to 10,000 steps and enough water during the workday. It reads your calendar, finds the gaps between meetings, and tells you when to walk. Your steps arrive from your iPhone and Apple Watch on their own.
 
-[![Version 0.3.2](https://img.shields.io/badge/version-0.3.2-2F7DF6)](Resources/Info.plist)
+[![Version 0.4.0](https://img.shields.io/badge/version-0.4.0-2F7DF6)](Resources/Info.plist)
 [![License: Sustainable Use 1.0](https://img.shields.io/badge/license-Sustainable%20Use%201.0-8B5CF6)](LICENSE.md)
 [![Build](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml/badge.svg)](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white)
@@ -74,7 +74,7 @@ Next to your step count: how much of today is still **free of meetings**. Under 
 <td valign="top">
 
 ### 🔔 A nudge at the right moment
-When a gap between meetings opens and you're more than 300 steps behind pace, a strip drops from the top of the screen. **Going** quiets it until the gap ends; **In 10 min** asks again later.
+When a gap between meetings opens and you're more than 300 steps behind pace, a small black island grows out of the notch (or hangs from the menu bar on Macs without one): a figure walking, how long to walk, and a ring that empties as the gap runs out. Hover or click it to answer: **Going** turns it into a walk timer, **In 10 min** asks again later, and a swipe up or ✕ skips this gap. Prefer less? In Settings, choose **In the menu bar** and only the Unsit item turns orange.
 
 </td>
 </tr>

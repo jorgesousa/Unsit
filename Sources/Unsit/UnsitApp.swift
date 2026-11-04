@@ -177,17 +177,66 @@ final class MenuBarController: NSObject, NSWindowDelegate {
         if panel.isVisible { position() }
     }
 
+    private var menuBarNudge: Bool { model.isNudging && model.nudgeStyle == .menuBar }
+
     private func updateLabel() {
         guard let button = statusItem.button else { return }
         let symbol = model.goalReached ? "checkmark.circle"
             : (model.isNudging ? "figure.walk.motion" : "figure.walk")
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Unsit")
-        image?.isTemplate = true
-        button.image = image
-        button.title = " " + model.menuTitle
+        button.wantsLayer = true
+        if menuBarNudge {
+            // Style B: the item itself turns orange and says what to do.
+            let white = image?.withSymbolConfiguration(.init(paletteColors: [.white]))
+            white?.isTemplate = false
+            button.image = white
+            button.attributedTitle = NSAttributedString(
+                string: " \(model.menuTitle) · walk \(model.walkMinutes) min ",
+                attributes: [.foregroundColor: NSColor.white,
+                             .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)])
+            button.layer?.backgroundColor = NSColor(srgbRed: 1, green: 0.353, blue: 0.122, alpha: 1).cgColor
+            button.layer?.cornerRadius = 5
+        } else {
+            image?.isTemplate = true
+            button.image = image
+            button.layer?.backgroundColor = nil
+            button.title = " " + model.menuTitle
+        }
     }
 
+    /// Style B's menu: what's going on, and the three answers.
+    private func showNudgeMenu() {
+        guard let button = statusItem.button else { return }
+        let menu = NSMenu()
+        for line in [model.nudgeTitle, "\(model.behindBy.formatted()) behind pace"] {
+            let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        for (title, action) in [("Going", #selector(nudgeGoing)), ("Remind me in 10 min", #selector(nudgeLater)),
+                                ("Not this gap", #selector(nudgeSkip))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let open = NSMenuItem(title: "Open Unsit", action: #selector(openFromMenu), keyEquivalent: "")
+        open.target = self
+        menu.addItem(open)
+        _ = menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 5), in: button)
+    }
+
+    @objc private func nudgeGoing() { model.going() }
+    @objc private func nudgeLater() { model.later() }
+    @objc private func nudgeSkip() { model.notThisGap() }
+    @objc private func openFromMenu() { showPanel() }
+
     @objc private func toggle(_ sender: Any?) {
+        if menuBarNudge && !panel.isVisible {
+            showNudgeMenu()
+            return
+        }
         if panel.isVisible {
             hidePanel()
         } else if Date().timeIntervalSince(lastClosed) > 0.25 {
@@ -326,6 +375,13 @@ struct StepsFile: Decodable {
     }
 }
 
+/// How the walk nudge shows up.
+enum NudgeStyle: String, CaseIterable, Identifiable {
+    case island, menuBar
+    var id: String { rawValue }
+    var label: String { self == .island ? "Island at the top of the screen" : "In the menu bar" }
+}
+
 /// One reading of today's steps and where it came from.
 struct StepsReading: Equatable {
     enum Source { case file, relay }
@@ -353,6 +409,16 @@ final class UnsitModel: ObservableObject {
     func resumeNudges() { pausedUntil = nil }
     /// A steps file the person picked by hand, used before the usual locations.
     @Published var customStepsPath: String? { didSet { defaults.set(customStepsPath, forKey: "customStepsPath") } }
+    /// Island (default) or menu bar.
+    @Published var nudgeStyle: NudgeStyle {
+        didSet {
+            defaults.set(nudgeStyle.rawValue, forKey: "nudgeStyle")
+            // Show the current nudge again in the new style.
+            NudgePanelController.shared.hide()
+            isNudging = false
+            evaluateNudge()
+        }
+    }
     /// The private code the shortcut posts steps to. Same code on every Mac = same steps.
     @Published private(set) var relayCode: String {
         didSet {
@@ -398,6 +464,7 @@ final class UnsitModel: ObservableObject {
         dayEndMinute = d.object(forKey: "dayEndMinute") as? Int ?? 19 * 60
         onboarded = d.bool(forKey: "onboarded")
         customStepsPath = d.string(forKey: "customStepsPath")
+        nudgeStyle = NudgeStyle(rawValue: d.string(forKey: "nudgeStyle") ?? "") ?? .island
         if let saved = d.string(forKey: "relayCode"), Self.isValidRelayCode(saved) {
             relayCode = saved
         } else {
@@ -949,7 +1016,7 @@ final class UnsitModel: ObservableObject {
         guard should != isNudging else { return }
         isNudging = should
         if should {
-            NudgePanelController.shared.show(model: self)
+            if nudgeStyle == .island { NudgePanelController.shared.show(model: self) }
             NSSound(named: NSSound.Name("Funk"))?.play()
         } else {
             NudgePanelController.shared.hide()
@@ -966,6 +1033,21 @@ final class UnsitModel: ObservableObject {
         snoozeUntil = now.addingTimeInterval(10 * 60)
         evaluateNudge()
     }
+
+    /// Dismissed: quiet until this gap ends, without counting it as a walk.
+    func notThisGap() {
+        snoozeUntil = nextGap?.end ?? now.addingTimeInterval(30 * 60)
+        evaluateNudge()
+    }
+
+    /// How much of the open gap is left, 1 when it has just opened.
+    var gapLeftFraction: Double {
+        guard let g = nextGap, g.start <= now, g.duration > 0 else { return 1 }
+        return max(0, min(1, g.end.timeIntervalSince(now) / g.duration))
+    }
+
+    /// "gap till 14:00", for the island and the menu bar.
+    var gapUntilText: String { nextGap.map { "gap till \(timeText($0.end))" } ?? "" }
 
     static func dayKey(_ d: Date) -> String {
         let c = Calendar.current.dateComponents([.year, .month, .day], from: d)
@@ -1566,6 +1648,16 @@ struct GeneralSettings: View {
                 }
             }
             Section {
+                Picker("Show the walk nudge", selection: $model.nudgeStyle) {
+                    ForEach(NudgeStyle.allCases) { Text($0.label).tag($0) }
+                }
+            } header: {
+                Text("Nudge")
+            } footer: {
+                Text("The island drops from the top of the screen when a gap opens. In the menu bar, only the Unsit item turns orange.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle("Open at login", isOn: openAtLoginBinding)
             }
         }
@@ -1790,53 +1882,235 @@ struct AuthorSettings: View {
     }
 }
 
-// MARK: - Floating panel (nudge)
+// MARK: - Nudge: the island
 
 final class FloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
+/// Style A. A black island that grows out of the notch, or hangs from the menu bar on Macs
+/// without one. The panel is a fixed transparent canvas; the island inside it changes size,
+/// and clicks on the transparent part fall through to whatever is underneath.
 @MainActor
 final class NudgePanelController {
     static let shared = NudgePanelController()
+    static let canvas = NSSize(width: 460, height: 190)
     private var panel: FloatingPanel?
-    let size = NSSize(width: 540, height: 150)
+    private var scrollMonitor: Any?
+    private weak var model: UnsitModel?
 
     func show(model: UnsitModel) {
-        guard let screen = NSScreen.main else { return }
+        self.model = model
+        guard let screen = Self.targetScreen() else { return }
+        let hasNotch = screen.safeAreaInsets.top > 0
+        // With a notch the island starts at the very top; without one, under the menu bar.
+        let top = hasNotch ? screen.frame.maxY : screen.visibleFrame.maxY
         if panel == nil {
-            let p = FloatingPanel(contentRect: NSRect(origin: .zero, size: size),
+            let p = FloatingPanel(contentRect: NSRect(origin: .zero, size: Self.canvas),
                                   styleMask: [.borderless, .nonactivatingPanel],
                                   backing: .buffered, defer: false)
             p.isOpaque = false
             p.backgroundColor = .clear
-            p.hasShadow = true
+            p.hasShadow = false
             p.level = .statusBar
             p.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-            p.appearance = NSAppearance(named: .darkAqua)
-            p.contentView = NSHostingView(rootView: NudgeView().environmentObject(model))
+            p.acceptsMouseMovedEvents = true
             panel = p
         }
         guard let p = panel else { return }
-        let f = screen.frame
-        let target = NSRect(x: f.midX - size.width / 2, y: f.maxY - size.height,
-                            width: size.width, height: size.height)
-        p.setFrame(target.offsetBy(dx: 0, dy: 24), display: false)
-        p.alphaValue = 0
+        p.contentView = NSHostingView(rootView: IslandView(hasNotch: hasNotch, notchHeight: max(screen.safeAreaInsets.top, 30))
+            .environmentObject(model))
+        p.setFrame(NSRect(x: screen.frame.midX - Self.canvas.width / 2, y: top - Self.canvas.height,
+                          width: Self.canvas.width, height: Self.canvas.height), display: true)
         p.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.25
-            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
-            p.animator().setFrame(target, display: true)
-            p.animator().alphaValue = 1
+        if scrollMonitor == nil {
+            // A swipe on the island dismisses it for this gap.
+            scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                let handled = MainActor.assumeIsolated { () -> Bool in
+                    let c = NudgePanelController.shared
+                    guard let p = c.panel, event.window === p, abs(event.scrollingDeltaY) > 6 else { return false }
+                    c.model?.notThisGap()
+                    return true
+                }
+                return handled ? nil : event
+            }
         }
     }
 
-    func hide() { panel?.orderOut(nil) }
+    func hide() {
+        panel?.orderOut(nil)
+        panel?.contentView = nil
+        if let m = scrollMonitor { NSEvent.removeMonitor(m); scrollMonitor = nil }
+    }
+
+    /// The screen you're looking at: the one with the pointer.
+    static func targetScreen() -> NSScreen? {
+        let mouse = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+    }
 }
 
-// MARK: - Nudge
+/// A little figure walking, drawn in code so it can loop.
+struct WalkingFigure: View {
+    var color: Color = .white
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            let swing = reduceMotion ? 0.3 : sin(t * 2 * .pi / 1.24) * 0.45
+            Canvas { c, size in
+                let s = size.width / 14
+                func line(_ a: CGPoint, _ b: CGPoint, _ w: CGFloat) {
+                    var p = Path(); p.move(to: a); p.addLine(to: b)
+                    c.stroke(p, with: .color(color), style: StrokeStyle(lineWidth: w * s, lineCap: .round))
+                }
+                func limb(_ o: CGPoint, _ length: CGFloat, _ angle: Double, _ w: CGFloat) {
+                    line(o, CGPoint(x: o.x + CGFloat(sin(angle)) * length * s, y: o.y + CGFloat(cos(angle)) * length * s), w)
+                }
+                c.fill(Path(ellipseIn: CGRect(x: 5.8 * s, y: 0.3 * s, width: 3.4 * s, height: 3.4 * s)), with: .color(color))
+                let hip = CGPoint(x: 6.6 * s, y: 9 * s), shoulder = CGPoint(x: 7.2 * s, y: 5 * s)
+                line(CGPoint(x: 7.3 * s, y: 4.2 * s), hip, 1.8)
+                limb(hip, 5, swing, 1.8)
+                limb(hip, 5, -swing, 1.8)
+                limb(shoulder, 3.6, -swing, 1.6)
+                limb(shoulder, 3.6, swing, 1.6)
+            }
+        }
+        .frame(width: 15, height: 17)
+        .accessibilityHidden(true)
+    }
+}
+
+/// How much of the gap is left: full when it opens, empty when it closes.
+struct GapRing: View {
+    let fraction: Double
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.18), lineWidth: 3)
+            Circle().trim(from: 0, to: fraction)
+                .stroke(Color.unsitSignal, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: 17, height: 17)
+        .animation(.linear(duration: 1), value: fraction)
+        .accessibilityLabel("\(Int(fraction * 100)) percent of the gap left")
+    }
+}
+
+struct IslandView: View {
+    @EnvironmentObject var model: UnsitModel
+    let hasNotch: Bool
+    let notchHeight: CGFloat
+    @State private var shown = false
+    @State private var open = false
+    @State private var walkingUntil: Date?
+    @State private var drag: CGFloat = 0
+
+    private let spring = Animation.spring(response: 0.45, dampingFraction: 0.82)
+    private var radius: CGFloat { open ? 26 : 20 }
+    private var shape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            island
+                .frame(width: shown ? (open ? 400 : 300) : 120, alignment: .top)
+                .frame(maxHeight: shown ? nil : (hasNotch ? notchHeight : 0), alignment: .top)
+                .background(shape.fill(Color.black))
+                .clipShape(shape)
+                .shadow(color: .black.opacity(shown ? 0.28 : 0), radius: 14, y: 6)
+                .offset(y: drag)
+                .contentShape(shape)
+                .onHover { inside in
+                    withAnimation(spring) { open = inside && walkingUntil == nil }
+                }
+                .gesture(
+                    DragGesture(minimumDistance: 3)
+                        .onChanged { v in drag = min(0, v.translation.height) }
+                        .onEnded { v in
+                            if v.translation.height < -14 { model.notThisGap() }
+                            else { withAnimation(spring) { drag = 0 } }
+                        }
+                )
+            Spacer(minLength: 0)
+        }
+        .frame(width: NudgePanelController.canvas.width, height: NudgePanelController.canvas.height, alignment: .top)
+        .environment(\.colorScheme, .dark)
+        .onAppear { withAnimation(spring) { shown = true } }
+    }
+
+    private var island: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                WalkingFigure(color: walkingUntil == nil ? .white : .unsitSignal)
+                if let until = walkingUntil {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text("Walking · \(Self.clock(until.timeIntervalSince(context.date)))")
+                            .foregroundStyle(Color.unsitSignal)
+                    }
+                } else {
+                    Text("Walk \(model.walkMinutes) min")
+                        + Text("  ·  \(model.gapUntilText)").foregroundColor(.white.opacity(0.55)).fontWeight(.medium)
+                }
+                Spacer(minLength: 8)
+                if walkingUntil == nil { GapRing(fraction: model.gapLeftFraction) }
+            }
+            .font(.system(size: 14, weight: .semibold).monospacedDigit())
+            .lineLimit(1)
+            .contentShape(Rectangle())
+            .onTapGesture { if walkingUntil == nil { withAnimation(spring) { open.toggle() } } }
+
+            if open && walkingUntil == nil {
+                Text("You're \(model.behindBy.formatted()) behind pace.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
+                    .transition(.opacity)
+                HStack(spacing: 6) {
+                    Button("Going") { startWalking() }
+                        .buttonStyle(PillStyle(fill: .unsitSignal, text: .white))
+                    Button("In 10 min") { model.later() }
+                        .buttonStyle(PillStyle(fill: Color(white: 0.17), text: Color(white: 0.85)))
+                    Spacer()
+                    Button { model.notThisGap() } label: {
+                        Image(systemName: "xmark").font(.system(size: 11, weight: .bold))
+                            .frame(width: 26, height: 26).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white.opacity(0.45))
+                    .help("Not this gap")
+                    .accessibilityLabel("Dismiss for this gap")
+                }
+                .transition(.opacity)
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 18)
+        .padding(.top, hasNotch ? notchHeight + 6 : 10)
+        .padding(.bottom, 12)
+    }
+
+    /// Going: the island becomes a walk timer for a moment, then folds away for the rest of the gap.
+    @MainActor private func startWalking() {
+        withAnimation(spring) {
+            walkingUntil = Date().addingTimeInterval(Double(model.walkMinutes) * 60)
+            open = false
+        }
+        let model = self.model
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            model.going()
+        }
+    }
+
+    static func clock(_ seconds: TimeInterval) -> String {
+        let s = max(0, Int(seconds))
+        return String(format: "%d:%02d", s / 60, s % 60)
+    }
+}
 
 struct PillStyle: ButtonStyle {
     let fill: Color
@@ -1849,41 +2123,6 @@ struct PillStyle: ButtonStyle {
             .frame(height: 30)
             .background(Capsule().fill(fill))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-    }
-}
-
-struct NudgeView: View {
-    @EnvironmentObject var model: UnsitModel
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                UnsitMark(size: 22)
-                DayStrip(model: model, height: 16, showTicks: false, allowsHover: false).frame(width: 130)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(model.nudgeTitle).font(.system(size: 16, weight: .semibold))
-                Text(model.nudgeDetail)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.white.opacity(0.65))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-            VStack(spacing: 7) {
-                Button("Going") { model.going() }
-                    .buttonStyle(PillStyle(fill: .unsitSignal, text: .white))
-                Button("In 10 min") { model.later() }
-                    .buttonStyle(PillStyle(fill: Color(white: 0.17), text: Color(white: 0.85)))
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 40)
-        .padding(.bottom, 14)
-        .frame(width: 540, height: 150)
-        .background(UnevenRoundedRectangle(bottomLeadingRadius: 32, bottomTrailingRadius: 32, style: .continuous)
-            .fill(Color.black))
-        .foregroundStyle(.white)
-        .environment(\.colorScheme, .dark)
     }
 }
 
