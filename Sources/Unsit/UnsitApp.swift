@@ -51,7 +51,7 @@ extension Color {
     })
 }
 
-func timeText(_ d: Date) -> String { d.formatted(date: .omitted, time: .shortened) }
+func timeText(_ d: Date) -> String { d.formatted(.dateTime.hour(.twoDigits(amPM: .abbreviated)).minute(.twoDigits)) }
 
 // MARK: - App
 
@@ -153,7 +153,13 @@ final class UnsitModel: ObservableObject {
     @Published var dayStartMinute: Int { didSet { defaults.set(dayStartMinute, forKey: "dayStartMinute"); workdayChanged() } }
     @Published var dayEndMinute: Int { didSet { defaults.set(dayEndMinute, forKey: "dayEndMinute"); workdayChanged() } }
     @Published var onboarded: Bool { didSet { defaults.set(onboarded, forKey: "onboarded") } }
-    @Published var paused = false { didSet { evaluateNudge() } }
+    /// Nudges stay quiet until this moment.
+    @Published var pausedUntil: Date? = nil { didSet { evaluateNudge() } }
+    var isPaused: Bool { pausedUntil.map { $0 > now } ?? false }
+
+    func pauseNudges(minutes: Int) { pausedUntil = now.addingTimeInterval(Double(minutes) * 60) }
+    func pauseForRestOfDay() { pausedUntil = dayEnd }
+    func resumeNudges() { pausedUntil = nil }
     /// A steps file the person picked by hand, used before the usual locations.
     @Published var customStepsPath: String? { didSet { defaults.set(customStepsPath, forKey: "customStepsPath") } }
 
@@ -559,9 +565,18 @@ final class UnsitModel: ObservableObject {
     var syncText: String {
         guard let d = stepsUpdatedAt else { return "Waiting for steps from iPhone" }
         let mins = Int(now.timeIntervalSince(d) / 60)
+        if syncIsStale {
+            return "Last steps \(UnsitModel.durationText(mins)) ago. Check the Unsit Sync automation."
+        }
         if mins < 1 { return "Steps from iPhone, just now" }
         if mins < 90 { return "Steps from iPhone, \(mins) min ago" }
         return "Steps from iPhone at \(timeText(d))"
+    }
+
+    /// During the workday, steps older than 90 minutes probably mean an automation stopped.
+    var syncIsStale: Bool {
+        guard let d = stepsUpdatedAt, isWorkday else { return false }
+        return now.timeIntervalSince(d) > 90 * 60 && now.timeIntervalSince(dayStart) > 90 * 60
     }
 
     var waterGoalText: String {
@@ -575,7 +590,7 @@ final class UnsitModel: ObservableObject {
     // MARK: Nudge
 
     var shouldNudge: Bool {
-        guard onboarded, !paused, isWorkday, !goalReached, !isAway, currentMeeting == nil else { return false }
+        guard onboarded, !isPaused, isWorkday, !goalReached, !isAway, currentMeeting == nil else { return false }
         if let s = snoozeUntil, s > now { return false }
         // Only nudge when a gap is open and you're meaningfully behind pace.
         return gapOpenNow && behindBy > 300
@@ -665,6 +680,7 @@ struct DayStrip: View {
     var height: CGFloat = 30
     var showTicks = true
     var allowsHover = true
+    var showsSteps = true
     @State private var hoverX: CGFloat?
     @State private var tagSize: CGSize = CGSize(width: 180, height: 34)
 
@@ -673,7 +689,9 @@ struct DayStrip: View {
             GeometryReader { geo in
                 let w = geo.size.width
                 let h = geo.size.height
-                let inset = h * 0.14
+                let inset: CGFloat = 4
+                let stepsLane: CGFloat = showsSteps ? 9 : 0
+                let blockH = h - inset * 2 - stepsLane
                 ZStack(alignment: .topLeading) {
                     RoundedRectangle(cornerRadius: 8).fill(Color.unsitTrack)
                     ForEach(model.events) { e in
@@ -682,19 +700,41 @@ struct DayStrip: View {
                         if x1 - x0 > 2 {
                             RoundedRectangle(cornerRadius: 4)
                                 .fill(Color.unsitMist)
-                                .frame(width: x1 - x0 - 2, height: h - inset * 2)
+                                .frame(width: x1 - x0 - 2, height: blockH)
                                 .offset(x: x0 + 1, y: inset)
                         }
                     }
                     ForEach(model.freeGaps.filter { $0.end > model.now }, id: \.start) { g in
-                        let isNext = g.start == model.nextGap?.start
+                        let isNext = g.start == model.nextGap?.start && !model.goalReached
                         let x0 = model.fraction(of: max(g.start, model.now)) * w
                         let x1 = model.fraction(of: g.end) * w
-                        if x1 - x0 > 2 {
+                        if x1 - x0 > 3 {
+                            // The next gap is solid; later gaps are outlined, so shape (not just colour) tells them apart.
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.unsitSignal.opacity(isNext && !model.goalReached ? 1 : 0.28))
-                                .frame(width: x1 - x0 - 2, height: h - inset * 2)
+                                .fill(Color.unsitSignal.opacity(isNext ? 1 : 0.06))
+                                .overlay(RoundedRectangle(cornerRadius: 4)
+                                    .strokeBorder(Color.unsitSignal, lineWidth: isNext ? 0 : 1.5))
+                                .frame(width: x1 - x0 - 2, height: blockH)
                                 .offset(x: x0 + 1, y: inset)
+                        }
+                    }
+                    if showsSteps {
+                        // Your steps on the same axis: if the line stops before "now", you're behind.
+                        let laneY = h - inset - 4
+                        let stepsX = model.stepProgress * w
+                        let nowX = model.dayFraction * w
+                        Capsule().fill(Color.primary.opacity(0.10))
+                            .frame(width: max(0, w - 8), height: 4)
+                            .offset(x: 4, y: laneY)
+                        if model.isWorkday && nowX > stepsX + 2 && !model.goalReached {
+                            Capsule().fill(Color.unsitSignal.opacity(0.45))
+                                .frame(width: nowX - stepsX, height: 4)
+                                .offset(x: stepsX, y: laneY)
+                        }
+                        if stepsX > 1 {
+                            Capsule().fill(Color.primary)
+                                .frame(width: max(4, stepsX - 4), height: 4)
+                                .offset(x: 4, y: laneY)
                         }
                     }
                     if let x = hoverX {
@@ -708,6 +748,7 @@ struct DayStrip: View {
                         .frame(width: 2, height: h + 10)
                         .offset(x: model.dayFraction * w - 1, y: -5)
                 }
+                .animation(.easeOut(duration: 0.12), value: hoverX == nil)
                 .contentShape(Rectangle())
                 .onContinuousHover { phase in
                     guard allowsHover else { return }
@@ -727,6 +768,7 @@ struct DayStrip: View {
                                         y: -(tagSize.height + 6))
                                 .allowsHitTesting(false)
                                 .onPreferenceChange(TagSizeKey.self) { tagSize = $0 }
+                                .transition(.opacity.combined(with: .scale(scale: 0.97)))
                         }
                     }
                 }
@@ -756,6 +798,23 @@ struct DayStrip: View {
                 .frame(height: 14)
             }
         }
+    }
+}
+
+struct StripLegend: View {
+    var body: some View {
+        HStack(spacing: 14) {
+            item("Meetings") { RoundedRectangle(cornerRadius: 2).fill(Color.unsitMist).frame(width: 12, height: 8) }
+            item("Next gap") { RoundedRectangle(cornerRadius: 2).fill(Color.unsitSignal).frame(width: 12, height: 8) }
+            item("Later gaps") { RoundedRectangle(cornerRadius: 2).strokeBorder(Color.unsitSignal, lineWidth: 1.5).frame(width: 12, height: 8) }
+            item("Your steps") { Capsule().fill(Color.primary).frame(width: 12, height: 3) }
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+    }
+
+    private func item<S: View>(_ label: String, @ViewBuilder swatch: () -> S) -> some View {
+        HStack(spacing: 5) { swatch(); Text(label) }
     }
 }
 
@@ -850,7 +909,7 @@ struct WaterCups: View {
 struct CupPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
@@ -911,10 +970,8 @@ struct PanelView: View {
             .font(.system(size: 13))
             .padding(.top, 2)
 
-            PaceLine(progress: model.stepProgress, pace: model.dayFraction, showLabel: true)
-                .padding(.top, 30)
-
-            DayStrip(model: model).padding(.top, 18)
+            DayStrip(model: model, height: 38).padding(.top, 24)
+            StripLegend().padding(.top, 8)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(model.gapTitle).font(.system(size: 15, weight: .semibold))
@@ -956,7 +1013,7 @@ struct PanelView: View {
                         }
                         .help("Add a glass of \(model.glassML) ml")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(CupPressStyle())
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Color.unsitWater)
                     .background(Capsule().fill(Color.unsitWater.opacity(0.12)))
@@ -967,12 +1024,26 @@ struct PanelView: View {
 
             Divider().padding(.vertical, 12)
 
-            HStack {
-                Text(model.syncText).font(.system(size: 11.5)).foregroundStyle(.secondary)
-                Spacer()
-                Toggle("Pause", isOn: $model.paused)
-                    .toggleStyle(.button)
-                    .controlSize(.small)
+            HStack(alignment: .top) {
+                Text(model.syncText)
+                    .font(.system(size: 11.5, weight: model.syncIsStale ? .semibold : .regular))
+                    .foregroundStyle(model.syncIsStale ? Color.unsitSignal : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Menu {
+                    if model.isPaused {
+                        Button("Resume nudges") { model.resumeNudges() }
+                    } else {
+                        Button("For 1 hour") { model.pauseNudges(minutes: 60) }
+                        Button("For 2 hours") { model.pauseNudges(minutes: 120) }
+                        Button("Rest of today") { model.pauseForRestOfDay() }
+                    }
+                } label: {
+                    Text(model.isPaused ? "Paused until \(timeText(model.pausedUntil ?? Date()))" : "Pause nudges")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .font(.system(size: 11.5))
             }
         }
         .padding(18)
@@ -1111,12 +1182,15 @@ final class NudgePanelController {
         }
         guard let p = panel else { return }
         let f = screen.frame
-        p.setFrame(NSRect(x: f.midX - size.width / 2, y: f.maxY - size.height,
-                          width: size.width, height: size.height), display: true)
+        let target = NSRect(x: f.midX - size.width / 2, y: f.maxY - size.height,
+                            width: size.width, height: size.height)
+        p.setFrame(target.offsetBy(dx: 0, dy: 24), display: false)
         p.alphaValue = 0
         p.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.25
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
+            p.animator().setFrame(target, display: true)
             p.animator().alphaValue = 1
         }
     }
@@ -1147,7 +1221,7 @@ struct NudgeView: View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 10) {
                 UnsitMark(size: 22)
-                DayStrip(model: model, height: 16, showTicks: false, allowsHover: false).frame(width: 130)
+                DayStrip(model: model, height: 16, showTicks: false, allowsHover: false, showsSteps: false).frame(width: 130)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.nudgeTitle).font(.system(size: 16, weight: .semibold))
@@ -1405,9 +1479,8 @@ struct OnboardingView: View {
             header("Find the gaps in your day",
                    "Unsit reads your calendar to see where meetings are and when a gap opens. Nothing leaves this Mac.")
             VStack(alignment: .leading, spacing: 0) {
-                PaceLine(progress: model.stepProgress, pace: model.dayFraction, showLabel: true)
-                    .padding(.top, 20)
-                DayStrip(model: model, height: 26).padding(.top, 16)
+                DayStrip(model: model, height: 34).padding(.top, 4)
+                StripLegend().padding(.top, 8)
             }
             .padding(16)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
