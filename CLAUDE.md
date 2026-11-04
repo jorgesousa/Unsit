@@ -22,15 +22,18 @@ SIGN_IDENTITY="Unsit Local" scripts/build-app.sh --open   # keeps calendar permi
 
 ## Conventions
 
-- **Versioning (like neteinstein/Calendar-Sync):** every change that lands on main bumps `CFBundleShortVersionString` (patch) and `CFBundleVersion` (+1) in `Resources/Info.plist`, and the version badge in README. New features bump the minor. Releases tagged `v<version>`. Current: 0.2.1 (build 3), not yet released.
+- **Versioning (like neteinstein/Calendar-Sync):** every change that lands on main bumps `CFBundleShortVersionString` (patch) and `CFBundleVersion` (+1) in `Resources/Info.plist`, and the version badge in README. New features bump the minor. Releases tagged `v<version>`. Current: 0.2.2 (build 4), not yet released.
 - **Design system "A, native premium":** graphite #16181B, paper #FBFBFC, mist #CDD1D7 (meetings), signal orange #FF5A1F (only for time to move / warnings), water blue #2F7DF6 (only water). SF Pro, sentence case, no decoration. Motion: ease-out cubic-bezier(0.23, 1, 0.32, 1), under 300 ms, scale 0.95–0.97 on press.
 - **Panel top (decided):** left = steps "of 10 000 steps"; right = time "free of meetings today". The bottom-right line only appears for warnings ("1 240 behind pace", "… of walking won't fit"). How much to walk lives in the gap line under the strip.
 - **Copy:** English UI, plain verbs, specific numbers. Walking time assumes 100 steps/min.
 - Jorge talks in Portuguese (pt-PT); keep the app's UI in English.
 
+## Licence
+
+Sustainable Use License 1.0 (`SUL-1.0`), same as Calendar-Sync: `LICENSE.md` + README badge and section.
+
 ## Open items
 
 - Repo is live at github.com/jorgesousa/Unsit (public); CI is green on macos-14. Its older Swift is stricter about concurrency than local Xcode: in `Task { @MainActor … }` inside a `[weak self]` closure, capture `[weak self]` again.
-- Licence: not chosen. Candidate: Sustainable Use License 1.0 like Calendar-Sync (LICENSE.md + README badge).
 - `UnsitConfig.shortcutLink` is still a placeholder; needs the iCloud link of the shared "Unsit Sync" shortcut (the setup QR code uses it).
 - Later ideas, not started: other app modes (Jorge wants them, design first), goal-reached moment, configurable walking pace, desktop widgets (need paid account), Homebrew tap, Android phones as a steps source ("coming soon" in README).
