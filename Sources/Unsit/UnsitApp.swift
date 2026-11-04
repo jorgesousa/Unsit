@@ -2099,10 +2099,10 @@ struct IslandView: View {
             walkingUntil = Date().addingTimeInterval(Double(model.walkMinutes) * 60)
             open = false
         }
-        let model = self.model
+        let unsit = self.model
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            model.going()
+            unsit.going()
         }
     }
 
