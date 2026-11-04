@@ -11,6 +11,7 @@ import EventKit
 import ServiceManagement
 import UniformTypeIdentifiers
 import CoreImage.CIFilterBuiltins
+import UnsitCore
 
 // MARK: - Config
 
@@ -35,6 +36,11 @@ enum UnsitConfig {
             ["steps.json", "steps.txt"].map { docs.appendingPathComponent(f).appendingPathComponent($0) }
         }
     }()
+    /// Where Unsit is published. The update check reads the newest release, or main's Info.plist.
+    static let repo = "jorgesousa/Unsit"
+    static let repoPage = URL(string: "https://github.com/\(repo)")!
+    static let releaseAPI = URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
+    static let mainInfoPlist = URL(string: "https://raw.githubusercontent.com/\(repo)/main/Resources/Info.plist")!
     static let awayAfter: TimeInterval = 5 * 60
     static let stepsPerMinute = 100.0
 }
@@ -79,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WindowRouter.shared.model = model
         menuBar = MenuBarController(model: model)
         model.start()
+        UpdateChecker.shared.start()
         if !model.onboarded { WindowRouter.shared.showOnboarding() }
     }
 }
@@ -139,7 +146,9 @@ final class MenuBarController: NSObject, NSWindowDelegate {
     init(model: UnsitModel) {
         self.model = model
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        host = NSHostingView(rootView: AnyView(MenuPanelContent().environmentObject(model)))
+        host = NSHostingView(rootView: AnyView(MenuPanelContent()
+            .environmentObject(model)
+            .environmentObject(UpdateChecker.shared)))
         super.init()
         panel.contentView = host
         panel.delegate = self
@@ -235,8 +244,10 @@ final class WindowRouter {
     weak var model: UnsitModel?
     private var windows: [String: NSWindow] = [:]
 
-    func showSettings() {
+    /// Tabs: 0 General, 1 iPhone, 2 Author.
+    func showSettings(tab: Int = 0) {
         show(id: "settings", title: "General", toolbarTabs: true) { SettingsTabs.controller(model: $0) }
+        (windows["settings"]?.contentViewController as? NSTabViewController)?.selectedTabViewItemIndex = tab
     }
 
     func showOnboarding() {
@@ -1241,10 +1252,15 @@ struct PauseMenu: View {
 
 struct SettingsMenu: View {
     @EnvironmentObject var model: UnsitModel
+    @EnvironmentObject var updates: UpdateChecker
 
     var body: some View {
         Menu {
             Toggle("Open at login", isOn: openAtLoginBinding)
+            if let latest = updates.available {
+                Button("Update to \(UpdateCheck.display(latest.version))…") { WindowRouter.shared.showSettings(tab: 2) }
+                Divider()
+            }
             Button("Settings…") { WindowRouter.shared.showSettings() }
             Button("Set up again…") { WindowRouter.shared.showOnboarding() }
             Divider()
@@ -1312,7 +1328,9 @@ enum SettingsTabs {
     }
 
     private static func item<V: View>(_ view: V, label: String, symbol: String, model: UnsitModel) -> NSTabViewItem {
-        let host = NSHostingController(rootView: view.environmentObject(model))
+        let host = NSHostingController(rootView: view
+            .environmentObject(model)
+            .environmentObject(UpdateChecker.shared))
         host.sizingOptions = [.preferredContentSize]
         host.title = label   // the window title follows the selected tab
         let item = NSTabViewItem(viewController: host)
@@ -1392,6 +1410,132 @@ struct PhoneSettings: View {
     }
 }
 
+struct UpdateRow: View {
+    @EnvironmentObject var updates: UpdateChecker
+    @State private var showSteps = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button("Check for updates") { Task { await updates.check() } }
+                .disabled(updates.status == .checking)
+            if let latest = updates.available {
+                Button("How to update") { showSteps = true }
+                    .popover(isPresented: $showSteps, arrowEdge: .bottom) { UpdateSteps(latest: latest) }
+            }
+            Text(updates.statusText)
+                .font(.system(size: 13, weight: updates.available == nil ? .regular : .semibold))
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Unsit is built from source, so updating is a pull and a rebuild.
+struct UpdateSteps: View {
+    let latest: UpdateCheck.Latest
+    private let commands = "git pull\nscripts/build-app.sh --open"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Unsit \(UpdateCheck.display(latest.version)) is out")
+                .font(.system(size: 13, weight: .semibold))
+            Text("In the folder where you cloned Unsit, run:")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+            Text(commands)
+                .font(.system(size: 12, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
+            HStack {
+                Link("What's new", destination: latest.url ?? UnsitConfig.repoPage)
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(commands, forType: .string)
+                }
+            }
+            .font(.system(size: 13))
+        }
+        .padding(16)
+        .frame(width: 320)
+    }
+}
+
+/// Checks GitHub for a newer Unsit at launch, once a day and on demand:
+/// the newest release when one exists, otherwise the version on main.
+@MainActor
+final class UpdateChecker: ObservableObject {
+    static let shared = UpdateChecker()
+
+    enum Status: Equatable {
+        case idle, checking, upToDate, notPublished, offline
+        case available(UpdateCheck.Latest)
+    }
+
+    @Published private(set) var status: Status = .idle
+    private var timer: Timer?
+
+    var currentVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+    }
+
+    var available: UpdateCheck.Latest? {
+        if case .available(let latest) = status { return latest }
+        return nil
+    }
+
+    var statusText: String {
+        switch status {
+        case .idle: return ""
+        case .checking: return "Checking…"
+        case .upToDate: return "Up to date."
+        case .notPublished: return "Not on GitHub yet."
+        case .offline: return "Couldn't reach GitHub."
+        case .available(let latest): return "Version \(UpdateCheck.display(latest.version)) is out."
+        }
+    }
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.check() }
+        }
+        timer?.tolerance = 3600
+        Task { await check() }
+    }
+
+    func check() async {
+        guard status != .checking else { return }
+        status = .checking
+        let release = await fetch(UnsitConfig.releaseAPI)
+        var latest = release.data.flatMap { UpdateCheck.latest(fromReleaseJSON: $0) }
+        var reached = release.reached
+        if latest == nil {
+            // No release yet: the version on main is what a fresh build would be.
+            let main = await fetch(UnsitConfig.mainInfoPlist)
+            reached = reached || main.reached
+            if let v = main.data.flatMap({ UpdateCheck.version(fromInfoPlist: $0) }) {
+                latest = UpdateCheck.Latest(version: v, url: UnsitConfig.repoPage)
+            }
+        }
+        guard let found = latest else {
+            status = reached ? .notPublished : .offline
+            return
+        }
+        status = UpdateCheck.isNewer(found.version, than: currentVersion) ? .available(found) : .upToDate
+    }
+
+    /// The body of a 200 reply, and whether GitHub answered at all.
+    private func fetch(_ url: URL) async -> (data: Data?, reached: Bool) {
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        request.setValue("Unsit", forHTTPHeaderField: "User-Agent")
+        guard let reply = try? await URLSession.shared.data(for: request) else { return (nil, false) }
+        let ok = (reply.1 as? HTTPURLResponse)?.statusCode == 200
+        return (ok ? reply.0 : nil, true)
+    }
+}
+
 struct AuthorSettings: View {
     static let authorURL = URL(string: "https://github.com/jorgesousa")!
 
@@ -1415,6 +1559,8 @@ struct AuthorSettings: View {
                 .font(.system(size: 13).monospacedDigit())
                 .foregroundStyle(.secondary)
                 .padding(.top, 3)
+            UpdateRow()
+                .padding(.top, 14)
             Text("Made by Jorge Sousa")
                 .font(.system(size: 13, weight: .semibold))
                 .padding(.top, 24)
