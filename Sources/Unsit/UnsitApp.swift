@@ -1945,7 +1945,7 @@ struct ManualShortcutSheet: View {
     @Environment(\.dismiss) private var dismiss
     private let steps = [
         "Open Shortcuts on your iPhone, tap + and name the shortcut \"Unsit Sync\".",
-        "Add Find Health Samples: Type is Steps, Start Date is today, Group By Day, Fill Missing on.",
+        "Add Find Health Samples: Type is Steps, Start Date is today, Group By Day, Fill Missing off.",
         "Add Get Details of Health Samples and choose Value.",
         "Add Round Number, to Integer.",
         "Add Text: {\"steps\": \"[Rounded Number]\", \"updatedAt\": \"[Current Date]\"}. Set Current Date to ISO 8601 with time.",
