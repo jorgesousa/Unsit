@@ -693,7 +693,8 @@ struct DayStrip: View {
                 let stepsLane: CGFloat = showsSteps ? 9 : 0
                 let blockH = h - inset * 2 - stepsLane
                 ZStack(alignment: .topLeading) {
-                    RoundedRectangle(cornerRadius: 8).fill(Color.unsitTrack)
+                    // Fixed size: the "now" line pokes out above and below, and must not stretch the track.
+                    RoundedRectangle(cornerRadius: 8).fill(Color.unsitTrack).frame(width: w, height: h)
                     ForEach(model.events) { e in
                         let x0 = model.fraction(of: e.start) * w
                         let x1 = model.fraction(of: e.end) * w
