@@ -414,12 +414,16 @@ final class UnsitModel: ObservableObject {
     var gapTitle: String {
         if goalReached { return "Done for today" }
         guard let g = nextGap else { return isWorkday ? "No gaps left today" : "Outside your workday" }
+        if now < dayStart { return "First gap \(timeText(g.start)) to \(timeText(g.end))" }
         return g.start <= now ? "Gap open until \(timeText(g.end))"
                               : "Next gap \(timeText(g.start)) to \(timeText(g.end))"
     }
 
     var gapDetail: String {
         if goalReached { return "Everything from here is a bonus." }
+        if now < dayStart {
+            return "Your day starts at \(timeText(dayStart)). Nothing to do yet."
+        }
         if behindBy == 0 { return "You're on pace. A short walk keeps it that way." }
         var s = "Walk \(walkMinutes) minutes"
         if let m = nextMeeting, let g = nextGap, m.start <= g.end.addingTimeInterval(60) {
@@ -540,7 +544,7 @@ struct PaceLine: View {
                         .font(.system(size: 10.5, weight: .semibold))
                         .foregroundStyle(Color.unsitSignal)
                         .fixedSize()
-                        .offset(x: w * pace - 12, y: -18)
+                        .offset(x: min(max(0, w * pace - 12), w - 26), y: -18)
                 }
             }
             .frame(height: 16)
@@ -550,7 +554,7 @@ struct PaceLine: View {
 }
 
 struct DayStrip: View {
-    let model: UnsitModel
+    @ObservedObject var model: UnsitModel
     var height: CGFloat = 30
     var showTicks = true
 
