@@ -1028,29 +1028,50 @@ struct PanelView: View {
 
             Divider().padding(.vertical, 12)
 
-            HStack(alignment: .top) {
+            HStack(alignment: .firstTextBaseline) {
                 Text(model.syncText)
                     .font(.system(size: 11.5, weight: model.syncIsStale ? .semibold : .regular))
                     .foregroundStyle(model.syncIsStale ? Color.unsitSignal : Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Menu {
-                    if model.isPaused {
-                        Button("Resume nudges") { model.resumeNudges() }
-                    } else {
-                        Button("For 1 hour") { model.pauseNudges(minutes: 60) }
-                        Button("For 2 hours") { model.pauseNudges(minutes: 120) }
-                        Button("Rest of today") { model.pauseForRestOfDay() }
-                    }
-                } label: {
-                    Text(model.isPaused ? "Paused until \(timeText(model.pausedUntil ?? Date()))" : "Pause nudges")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .font(.system(size: 11.5))
+                PauseMenu()
             }
         }
         .padding(18)
+    }
+}
+
+/// Footer control: same size and grey as the sync line next to it, so it reads as part of the footer.
+/// `.button` + `.plain` lets the label keep our font and colour; `.borderlessButton` would draw
+/// the system's larger popup text instead.
+struct PauseMenu: View {
+    @EnvironmentObject var model: UnsitModel
+
+    var body: some View {
+        Menu {
+            if model.isPaused {
+                Button("Resume nudges") { model.resumeNudges() }
+            } else {
+                Button("Pause for 1 hour") { model.pauseNudges(minutes: 60) }
+                Button("Pause for 2 hours") { model.pauseNudges(minutes: 120) }
+                Button("Pause for the rest of today") { model.pauseForRestOfDay() }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: model.isPaused ? "pause.circle.fill" : "pause.circle")
+                    .font(.system(size: 11, weight: .medium))
+                Text(model.isPaused ? "Paused until \(timeText(model.pausedUntil ?? Date()))" : "Pause")
+                    .font(.system(size: 11.5, weight: model.isPaused ? .medium : .regular))
+            }
+            .foregroundStyle(model.isPaused ? Color.primary : Color.secondary)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(model.isPaused ? "Resume nudges" : "Pause nudges")
+        .accessibilityLabel(model.isPaused ? "Nudges paused. Resume" : "Pause nudges")
     }
 }
 
