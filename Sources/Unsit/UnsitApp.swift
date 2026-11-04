@@ -444,6 +444,43 @@ final class UnsitModel: ObservableObject {
 
     var gapOpenNow: Bool { nextGap.map { $0.start <= now } ?? false }
 
+    /// Every free stretch of at least 10 minutes in today's workday, past ones included.
+    var freeGaps: [DateInterval] {
+        var gaps: [DateInterval] = []
+        var cursor = dayStart
+        for e in events where e.end > cursor {
+            if e.start.timeIntervalSince(cursor) >= 10 * 60 {
+                gaps.append(DateInterval(start: cursor, end: min(e.start, dayEnd)))
+            }
+            cursor = max(cursor, e.end)
+            if cursor >= dayEnd { break }
+        }
+        if dayEnd.timeIntervalSince(cursor) >= 10 * 60 {
+            gaps.append(DateInterval(start: cursor, end: dayEnd))
+        }
+        return gaps
+    }
+
+    /// What the day strip shows for a moment: a meeting's name, or a gap's length and what it's worth.
+    func stripInfo(at t: Date) -> (title: String, detail: String)? {
+        if let e = events.first(where: { $0.start <= t && $0.end > t }) {
+            return (e.title, "\(timeText(e.start)) to \(timeText(e.end))")
+        }
+        guard let g = freeGaps.first(where: { $0.start <= t && $0.end > t }) else { return nil }
+        let range = "\(timeText(g.start)) to \(timeText(g.end))"
+        if g.end <= now {
+            return ("\(Int(g.duration / 60)) min free", "\(range), already passed")
+        }
+        if g.start <= now {
+            let left = Int(g.end.timeIntervalSince(now) / 60)
+            let steps = Int(Double(left) * UnsitConfig.stepsPerMinute)
+            return ("\(left) min left in this gap", "Until \(timeText(g.end)), up to \(steps.formatted()) steps")
+        }
+        let mins = Int(g.duration / 60)
+        let steps = Int(Double(mins) * UnsitConfig.stepsPerMinute)
+        return ("\(mins) min free", "\(range), up to \(steps.formatted()) steps")
+    }
+
     // MARK: Words
 
     var menuTitle: String { steps.formatted() }
@@ -594,6 +631,8 @@ struct DayStrip: View {
     @ObservedObject var model: UnsitModel
     var height: CGFloat = 30
     var showTicks = true
+    var allowsHover = true
+    @State private var hoverX: CGFloat?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -613,20 +652,46 @@ struct DayStrip: View {
                                 .offset(x: x0 + 1, y: inset)
                         }
                     }
-                    if let g = model.nextGap, !model.goalReached {
-                        let x0 = model.fraction(of: g.start) * w
+                    ForEach(model.freeGaps.filter { $0.end > model.now }, id: \.start) { g in
+                        let isNext = g.start == model.nextGap?.start
+                        let x0 = model.fraction(of: max(g.start, model.now)) * w
                         let x1 = model.fraction(of: g.end) * w
                         if x1 - x0 > 2 {
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.unsitSignal)
+                                .fill(Color.unsitSignal.opacity(isNext && !model.goalReached ? 1 : 0.28))
                                 .frame(width: x1 - x0 - 2, height: h - inset * 2)
                                 .offset(x: x0 + 1, y: inset)
                         }
+                    }
+                    if let x = hoverX {
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.35))
+                            .frame(width: 1, height: h)
+                            .offset(x: x)
                     }
                     Rectangle()
                         .fill(Color.primary)
                         .frame(width: 2, height: h + 10)
                         .offset(x: model.dayFraction * w - 1, y: -5)
+                }
+                .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    guard allowsHover else { return }
+                    switch phase {
+                    case .active(let p): hoverX = min(max(0, p.x), w)
+                    case .ended: hoverX = nil
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    if let x = hoverX, w > 0 {
+                        let t = model.dayStart.addingTimeInterval(
+                            Double(x / w) * model.dayEnd.timeIntervalSince(model.dayStart))
+                        if let info = model.stripInfo(at: t) {
+                            StripTag(title: info.title, detail: info.detail)
+                                .position(x: min(max(x, 95), w - 95), y: -26)
+                                .allowsHitTesting(false)
+                        }
+                    }
                 }
             }
             .frame(height: height)
@@ -654,6 +719,23 @@ struct DayStrip: View {
                 .frame(height: 14)
             }
         }
+    }
+}
+
+struct StripTag: View {
+    let title: String
+    let detail: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title).font(.system(size: 11.5, weight: .semibold))
+            Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        .fixedSize()
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(Color.primary.opacity(0.1)))
+        .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
     }
 }
 
@@ -999,7 +1081,7 @@ struct NudgeView: View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 10) {
                 UnsitMark(size: 22)
-                DayStrip(model: model, height: 16, showTicks: false).frame(width: 130)
+                DayStrip(model: model, height: 16, showTicks: false, allowsHover: false).frame(width: 130)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.nudgeTitle).font(.system(size: 16, weight: .semibold))
