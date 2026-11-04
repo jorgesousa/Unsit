@@ -109,6 +109,17 @@ struct DayEvent: Identifiable {
     let start: Date
     let end: Date
     let title: String
+
+    /// Calendar Sync style titles start with "[Source]". Split that off so the name comes first.
+    var name: String { Self.split(title).name }
+    var source: String? { Self.split(title).source }
+
+    static func split(_ t: String) -> (name: String, source: String?) {
+        guard t.hasPrefix("["), let close = t.firstIndex(of: "]") else { return (t, nil) }
+        let source = String(t[t.index(after: t.startIndex)..<close])
+        let rest = t[t.index(after: close)...].trimmingCharacters(in: .whitespaces)
+        return rest.isEmpty ? (t, nil) : (rest, source)
+    }
 }
 
 struct StepsFile: Decodable {
@@ -464,7 +475,8 @@ final class UnsitModel: ObservableObject {
     /// What the day strip shows for a moment: a meeting's name, or a gap's length and what it's worth.
     func stripInfo(at t: Date) -> (title: String, detail: String)? {
         if let e = events.first(where: { $0.start <= t && $0.end > t }) {
-            return (e.title, "\(timeText(e.start)) to \(timeText(e.end))")
+            let range = "\(timeText(e.start)) to \(timeText(e.end))"
+            return (e.name, e.source.map { "\($0), \(range)" } ?? range)
         }
         guard let g = freeGaps.first(where: { $0.start <= t && $0.end > t }) else { return nil }
         let range = "\(timeText(g.start)) to \(timeText(g.end))"
@@ -507,7 +519,7 @@ final class UnsitModel: ObservableObject {
         if behindBy == 0 { return "You're on pace. A short walk keeps it that way." }
         var s = "Walk \(walkMinutes) minutes"
         if let m = nextMeeting, let g = nextGap, m.start <= g.end.addingTimeInterval(60) {
-            s += " before \(m.title)"
+            s += " before \(m.name)"
         }
         return s + " and you're back on pace."
     }
@@ -633,6 +645,7 @@ struct DayStrip: View {
     var showTicks = true
     var allowsHover = true
     @State private var hoverX: CGFloat?
+    @State private var tagSize: CGSize = CGSize(width: 180, height: 34)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -688,8 +701,11 @@ struct DayStrip: View {
                             Double(x / w) * model.dayEnd.timeIntervalSince(model.dayStart))
                         if let info = model.stripInfo(at: t) {
                             StripTag(title: info.title, detail: info.detail)
-                                .position(x: min(max(x, 95), w - 95), y: -26)
+                                .fixedSize()
+                                .offset(x: min(max(0, x - tagSize.width / 2), max(0, w - tagSize.width)),
+                                        y: -(tagSize.height + 6))
                                 .allowsHitTesting(false)
+                                .onPreferenceChange(TagSizeKey.self) { tagSize = $0 }
                         }
                     }
                 }
@@ -727,16 +743,23 @@ struct StripTag: View {
     let detail: String
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(title).font(.system(size: 11.5, weight: .semibold))
-            Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(title).font(.system(size: 11.5, weight: .semibold)).lineLimit(2)
+            Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
         }
-        .fixedSize()
+        .frame(maxWidth: 250, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(Color.primary.opacity(0.1)))
         .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+        .background(GeometryReader { p in Color.clear.preference(key: TagSizeKey.self, value: p.size) })
     }
+}
+
+struct TagSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
 }
 
 struct Cup: Shape {
