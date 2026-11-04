@@ -680,7 +680,7 @@ struct DayStrip: View {
     var height: CGFloat = 30
     var showTicks = true
     var allowsHover = true
-    var showsSteps = true
+    var showsSteps = false
     @State private var hoverX: CGFloat?
     @State private var tagSize: CGSize = CGSize(width: 180, height: 34)
 
@@ -807,7 +807,6 @@ struct StripLegend: View {
             item("Meetings") { RoundedRectangle(cornerRadius: 2).fill(Color.unsitMist).frame(width: 12, height: 8) }
             item("Next gap") { RoundedRectangle(cornerRadius: 2).fill(Color.unsitSignal).frame(width: 12, height: 8) }
             item("Later gaps") { RoundedRectangle(cornerRadius: 2).strokeBorder(Color.unsitSignal, lineWidth: 1.5).frame(width: 12, height: 8) }
-            item("Your steps") { Capsule().fill(Color.primary).frame(width: 12, height: 3) }
         }
         .font(.system(size: 11))
         .foregroundStyle(.secondary)
@@ -970,7 +969,7 @@ struct PanelView: View {
             .font(.system(size: 13))
             .padding(.top, 2)
 
-            DayStrip(model: model, height: 38).padding(.top, 24)
+            DayStrip(model: model, height: 30).padding(.top, 24)
             StripLegend().padding(.top, 8)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -1221,7 +1220,7 @@ struct NudgeView: View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 10) {
                 UnsitMark(size: 22)
-                DayStrip(model: model, height: 16, showTicks: false, allowsHover: false, showsSteps: false).frame(width: 130)
+                DayStrip(model: model, height: 16, showTicks: false, allowsHover: false).frame(width: 130)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.nudgeTitle).font(.system(size: 16, weight: .semibold))
@@ -1479,7 +1478,7 @@ struct OnboardingView: View {
             header("Find the gaps in your day",
                    "Unsit reads your calendar to see where meetings are and when a gap opens. Nothing leaves this Mac.")
             VStack(alignment: .leading, spacing: 0) {
-                DayStrip(model: model, height: 34).padding(.top, 4)
+                DayStrip(model: model, height: 28).padding(.top, 4)
                 StripLegend().padding(.top, 8)
             }
             .padding(16)
