@@ -33,5 +33,4 @@ SIGN_IDENTITY="Unsit Local" scripts/build-app.sh --open   # keeps calendar permi
 - Repo is live at github.com/jorgesousa/Unsit (public); CI is green on macos-14. Its older Swift is stricter about concurrency than local Xcode: in `Task { @MainActor … }` inside a `[weak self]` closure, capture `[weak self]` again.
 - Licence: not chosen. Candidate: Sustainable Use License 1.0 like Calendar-Sync (LICENSE.md + README badge).
 - `UnsitConfig.shortcutLink` is still a placeholder; needs the iCloud link of the shared "Unsit Sync" shortcut (the setup QR code uses it).
-- Confirm the Settings window shows the three toolbar tabs (General, iPhone, Author); it compiles but was never seen running.
 - Later ideas, not started: other app modes (Jorge wants them, design first), goal-reached moment, configurable walking pace, desktop widgets (need paid account), Homebrew tap, Android phones as a steps source ("coming soon" in README).
