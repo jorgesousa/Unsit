@@ -1101,7 +1101,7 @@ struct PanelView: View {
                         Text(UnsitModel.durationText(model.freeMinutesLeft))
                             .font(.system(size: 22, weight: .semibold).monospacedDigit())
                             .tracking(-0.5)
-                        Text("free to walk today")
+                        Text("free of meetings today")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
@@ -1117,8 +1117,8 @@ struct PanelView: View {
                     Text(model.paceText).fontWeight(.semibold).foregroundStyle(Color.unsitSignal)
                 } else if !model.goalReached && model.calendarAllowed && model.now < model.dayEnd {
                     Text(model.enoughTimeToWalk
-                         ? "you need about \(UnsitModel.durationText(model.walkMinutesNeeded))"
-                         : "not enough: you need \(UnsitModel.durationText(model.walkMinutesNeeded))")
+                         ? "about \(UnsitModel.durationText(model.walkMinutesNeeded)) of walking left"
+                         : "\(UnsitModel.durationText(model.walkMinutesNeeded)) of walking won't fit")
                         .fontWeight(model.enoughTimeToWalk ? .regular : .semibold)
                         .foregroundStyle(model.enoughTimeToWalk ? Color.secondary : Color.unsitSignal)
                 } else {
