@@ -196,6 +196,12 @@ final class UnsitModel: ObservableObject {
 
     func tick() {
         now = Date()
+        let allowedNow = EKEventStore.authorizationStatus(for: .event) == .fullAccess
+        if allowedNow != calendarAllowed {
+            calendarAllowed = allowedNow
+            lastEventsFetch = .distantPast
+            if !allowedNow { events = [] }
+        }
         rollDayIfNeeded()
         refreshSteps()
         updatePresence()
@@ -335,6 +341,13 @@ final class UnsitModel: ObservableObject {
     // MARK: Calendar
 
     func requestCalendar() async {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        if status == .denied || status == .restricted || status == .writeOnly {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
         let ok = (try? await store.requestFullAccessToEvents()) ?? false
         calendarAllowed = ok
         if ok { fetchEvents() }
@@ -781,13 +794,17 @@ struct PanelView: View {
                     + Text(" of \(model.waterGoalText)").foregroundColor(.secondary)
                     HStack(spacing: 0) {
                         Button { model.removeGlass() } label: {
-                            Image(systemName: "minus").frame(width: 26, height: 22)
+                            Image(systemName: "minus")
+                                .frame(width: 30, height: 24)
+                                .contentShape(Rectangle())
                         }
                         .disabled(model.waterML == 0)
                         .help("Remove a glass")
                         Divider().frame(height: 14)
                         Button { model.addGlass() } label: {
-                            Image(systemName: "plus").frame(width: 26, height: 22)
+                            Image(systemName: "plus")
+                                .frame(width: 30, height: 24)
+                                .contentShape(Rectangle())
                         }
                         .help("Add a glass of \(model.glassML) ml")
                     }
