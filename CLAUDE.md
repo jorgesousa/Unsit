@@ -38,5 +38,15 @@ Sustainable Use License 1.0 (`SUL-1.0`), same as Calendar-Sync: `LICENSE.md` + R
 - `UnsitConfig.shortcutLink` is still a placeholder; needs the iCloud link of the shared "Unsit Sync" shortcut (the setup QR code uses it).
 - Water sync between Macs over the same ntfy code (water is still per Mac).
 - Pre-fill the ntfy action in the shared shortcut with an Import Question asking for the code.
+- **Redo the whole setup flow (Jorge, 2026-11-04).** What hurt on the first real setup:
+  - Building the shortcut by hand broke in many ways: a fixed date instead of "is today", Fill Missing producing two values, broken variables, Current Date without ISO time, Save File writing `.txt`.
+  - The Google Drive route failed: the Drive app won't let Shortcuts pick its folders.
+  - Pasting the test channel name into the code field made a different code (fixed in 0.3.1).
+  - Two ways in (iCloud file, ntfy code) make the explanations long.
+  - Ideas to weigh:
+    - Ship one shared Unsit Sync, with an Import Question for the code, so nobody edits actions.
+    - Consider the code as the single default path for everyone (works on any Mac), with iCloud as a fallback.
+    - Have setup confirm "Connected" from the first message, whichever path it came by.
+    - Guide the automations ("App › Is Closed" with several apps, plus hourly Time of Day) with pictures.
 - Later ideas, not started: other app modes (Jorge wants them, design first), goal-reached moment, configurable walking pace, desktop widgets (need paid account), Android phones as a steps source ("coming soon" in README).
 - Next step, decided: Homebrew like Calendar-Sync — a **formula** (not a cask) in `jorgesousa/homebrew-tap` that builds from source, so no quarantine or notarization. Install: `brew install jorgesousa/tap/unsit`. Needs: tag `v<version>`, `Formula/unsit.rb` (model: neteinstein/homebrew-tap), app links itself into `~/Applications` on first run, `brew services` for open at login, README install section + tap badge.
