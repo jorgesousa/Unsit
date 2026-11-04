@@ -8,6 +8,7 @@ import SwiftUI
 import AppKit
 import EventKit
 import ServiceManagement
+import UniformTypeIdentifiers
 import CoreImage.CIFilterBuiltins
 
 // MARK: - Config
@@ -135,6 +136,8 @@ final class UnsitModel: ObservableObject {
     @Published var cornerMode: Bool { didSet { defaults.set(cornerMode, forKey: "cornerMode"); applyMode() } }
     @Published var onboarded: Bool { didSet { defaults.set(onboarded, forKey: "onboarded"); applyMode() } }
     @Published var paused = false { didSet { evaluateNudge() } }
+    /// A steps file the person picked by hand, used before the usual locations.
+    @Published var customStepsPath: String? { didSet { defaults.set(customStepsPath, forKey: "customStepsPath") } }
 
     // Live state
     @Published private(set) var now = Date()
@@ -165,6 +168,7 @@ final class UnsitModel: ObservableObject {
         sitLimitMinutes = d.object(forKey: "sitLimitMinutes") as? Int ?? 45
         cornerMode = d.bool(forKey: "cornerMode")
         onboarded = d.bool(forKey: "onboarded")
+        customStepsPath = d.string(forKey: "customStepsPath")
         dayKeyInUse = Self.dayKey(Date())
         waterML = d.integer(forKey: "water-" + dayKeyInUse)
     }
@@ -217,8 +221,15 @@ final class UnsitModel: ObservableObject {
             ((try? fm.attributesOfItem(atPath: u.path))?[.modificationDate] as? Date) ?? .distantPast
         }
         // Use whichever candidate exists and was written most recently.
-        let existing = UnsitConfig.candidateFiles.filter { fm.fileExists(atPath: $0.path) }
-        let url = existing.max { modified($0) < modified($1) } ?? UnsitConfig.stepsFile
+        var candidates = UnsitConfig.candidateFiles
+        if let custom = customStepsPath { candidates.insert(URL(fileURLWithPath: custom), at: 0) }
+        let existing = candidates.filter { fm.fileExists(atPath: $0.path) }
+        let url: URL
+        if let custom = customStepsPath, fm.fileExists(atPath: custom) {
+            url = URL(fileURLWithPath: custom)
+        } else {
+            url = existing.max { modified($0) < modified($1) } ?? UnsitConfig.stepsFile
+        }
         let folder = url.deletingLastPathComponent()
 
         if !fm.fileExists(atPath: url.path) {
@@ -275,6 +286,25 @@ final class UnsitModel: ObservableObject {
         steps = newSteps
         stepsUpdatedAt = when
         stepsStatus = nil
+    }
+
+    /// Lets the person point Unsit at the steps file in Finder, once.
+    func chooseStepsFile() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose the steps file from Unsit Sync"
+        panel.message = "Pick steps.txt or steps.json in iCloud Drive › Shortcuts › Unsit."
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.json, .plainText, .text]
+        let shortcutsDocs = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/iCloud~is~workflow~my~workflows/Documents")
+        panel.directoryURL = shortcutsDocs
+        NSApp.activate()
+        if panel.runModal() == .OK, let url = panel.url {
+            customStepsPath = url.path
+            refreshSteps()
+        }
     }
 
     static func parseDate(_ s: String) -> Date? {
@@ -734,6 +764,7 @@ struct SettingsMenu: View {
                     Button("\(m) minutes seated") { model.sitLimitMinutes = m }
                 }
             }
+            Button("Choose steps file…") { model.chooseStepsFile() }
             Button("Set up again…") {
                 openWindow(id: "onboarding")
                 NSApp.activate()
@@ -1155,7 +1186,12 @@ struct OnboardingView: View {
                         Text("steps today").font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                 } else {
-                    Button("Check now") { model.refreshSteps() }
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Button("Check now") { model.refreshSteps() }
+                        Button("Choose the file…") { model.chooseStepsFile() }
+                            .buttonStyle(.link)
+                            .font(.system(size: 12))
+                    }
                 }
             }
             .padding(16)
