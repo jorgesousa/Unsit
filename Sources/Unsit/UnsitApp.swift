@@ -719,10 +719,11 @@ final class UnsitModel: ObservableObject {
 
     var gapDetail: String {
         if goalReached { return "Everything from here is a bonus." }
+        let walking = UnsitModel.durationText(walkMinutesNeeded)
         if now < dayStart {
-            return "Your day starts at \(timeText(dayStart)). Nothing to do yet."
+            return "Your day starts at \(timeText(dayStart)). About \(walking) of walking gets you to \(stepGoal.formatted())."
         }
-        if behindBy == 0 { return "You're on pace. A short walk keeps it that way." }
+        if behindBy == 0 { return "You're on pace. About \(walking) of walking left today." }
         var s = "Walk \(walkMinutes) minutes"
         if let m = nextMeeting, let g = nextGap, m.start <= g.end.addingTimeInterval(60) {
             s += " before \(m.name)"
@@ -1136,12 +1137,12 @@ struct PanelView: View {
                 Spacer()
                 if model.behindBy > 0 {
                     Text(model.paceText).fontWeight(.semibold).foregroundStyle(Color.unsitSignal)
-                } else if !model.goalReached && model.calendarAllowed && model.now < model.dayEnd {
-                    Text(model.enoughTimeToWalk
-                         ? "about \(UnsitModel.durationText(model.walkMinutesNeeded)) of walking left"
-                         : "\(UnsitModel.durationText(model.walkMinutesNeeded)) of walking won't fit")
-                        .fontWeight(model.enoughTimeToWalk ? .regular : .semibold)
-                        .foregroundStyle(model.enoughTimeToWalk ? Color.secondary : Color.unsitSignal)
+                } else if !model.goalReached && model.calendarAllowed && model.now < model.dayEnd
+                            && !model.enoughTimeToWalk {
+                    // How much to walk lives in the gap line below; up here only the warning that it won't fit.
+                    Text("\(UnsitModel.durationText(model.walkMinutesNeeded)) of walking won't fit")
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.unsitSignal)
                 } else {
                     Text(model.paceText).fontWeight(.semibold).foregroundStyle(Color.secondary)
                 }

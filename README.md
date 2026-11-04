@@ -63,7 +63,7 @@ Meetings in grey, the next gap in solid orange, later gaps outlined. Hover over 
 <td valign="top">
 
 ### ⏱️ Time, not just steps
-Next to your step count: how much of today is still **free of meetings**, and about how much **walking is left** to reach your goal. If it won't fit, it says so in orange.
+Next to your step count: how much of today is still **free of meetings**. Under your day: how much **walking is left** and when to do it, like *Walk 12 minutes before Design review and you're back on pace.* If it won't fit in your gaps, it says so in orange.
 
 </td>
 <td valign="top">
