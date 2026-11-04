@@ -69,6 +69,12 @@ struct UnsitApp: App {
         }
         .menuBarExtraStyle(.window)
 
+        Window("Unsit Settings", id: "settings") {
+            SettingsView().environmentObject(model)
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+
         Window("Welcome to Unsit", id: "onboarding") {
             OnboardingView().environmentObject(model)
         }
@@ -132,8 +138,9 @@ final class UnsitModel: ObservableObject {
     @Published var stepGoal: Int { didSet { defaults.set(stepGoal, forKey: "stepGoal") } }
     @Published var waterGoalML: Int { didSet { defaults.set(waterGoalML, forKey: "waterGoalML") } }
     @Published var glassML: Int { didSet { defaults.set(glassML, forKey: "glassML") } }
-    @Published var dayStartHour: Int { didSet { defaults.set(dayStartHour, forKey: "dayStartHour") } }
-    @Published var dayEndHour: Int { didSet { defaults.set(dayEndHour, forKey: "dayEndHour") } }
+    /// Workday start and end, in minutes after midnight (540 = 09:00).
+    @Published var dayStartMinute: Int { didSet { defaults.set(dayStartMinute, forKey: "dayStartMinute"); workdayChanged() } }
+    @Published var dayEndMinute: Int { didSet { defaults.set(dayEndMinute, forKey: "dayEndMinute"); workdayChanged() } }
     @Published var cornerMode: Bool { didSet { defaults.set(cornerMode, forKey: "cornerMode"); applyMode() } }
     @Published var onboarded: Bool { didSet { defaults.set(onboarded, forKey: "onboarded"); applyMode() } }
     @Published var paused = false { didSet { evaluateNudge() } }
@@ -163,8 +170,8 @@ final class UnsitModel: ObservableObject {
         stepGoal = d.object(forKey: "stepGoal") as? Int ?? 10_000
         waterGoalML = d.object(forKey: "waterGoalML") as? Int ?? 2_000
         glassML = d.object(forKey: "glassML") as? Int ?? 250
-        dayStartHour = d.object(forKey: "dayStartHour") as? Int ?? 9
-        dayEndHour = d.object(forKey: "dayEndHour") as? Int ?? 19
+        dayStartMinute = d.object(forKey: "dayStartMinute") as? Int ?? 9 * 60
+        dayEndMinute = d.object(forKey: "dayEndMinute") as? Int ?? 19 * 60
         cornerMode = d.bool(forKey: "cornerMode")
         onboarded = d.bool(forKey: "onboarded")
         customStepsPath = d.string(forKey: "customStepsPath")
@@ -359,8 +366,27 @@ final class UnsitModel: ObservableObject {
 
     // MARK: Day maths
 
-    var dayStart: Date { Calendar.current.date(bySettingHour: dayStartHour, minute: 0, second: 0, of: now) ?? now }
-    var dayEnd: Date { Calendar.current.date(bySettingHour: dayEndHour, minute: 0, second: 0, of: now) ?? now }
+    var dayStart: Date {
+        Calendar.current.date(bySettingHour: dayStartMinute / 60, minute: dayStartMinute % 60, second: 0, of: now) ?? now
+    }
+    var dayEnd: Date {
+        Calendar.current.date(bySettingHour: dayEndMinute / 60, minute: dayEndMinute % 60, second: 0, of: now) ?? now
+    }
+
+    /// Sets the workday, keeping it at least one hour long.
+    func setWorkday(start: Int, end: Int) {
+        let s = min(max(0, start), 22 * 60)
+        let e = min(max(end, s + 60), 23 * 60 + 59)
+        if s != dayStartMinute { dayStartMinute = s }
+        if e != dayEndMinute { dayEndMinute = e }
+    }
+
+    private func workdayChanged() {
+        lastEventsFetch = .distantPast
+        if timer != nil { tick() }
+    }
+
+    static func hhmm(_ minutes: Int) -> String { String(format: "%02d:%02d", minutes / 60, minutes % 60) }
 
     func fraction(of d: Date) -> Double {
         let span = dayEnd.timeIntervalSince(dayStart)
@@ -594,16 +620,21 @@ struct DayStrip: View {
 
             if showTicks {
                 GeometryReader { geo in
-                    let span = max(1, model.dayEndHour - model.dayStartHour)
-                    let hours = Array(stride(from: model.dayStartHour, through: model.dayEndHour, by: 2))
+                    let startM = model.dayStartMinute
+                    let span = max(60, model.dayEndMinute - startM)
+                    let firstH = (startM + 59) / 60
+                    let lastH = model.dayEndMinute / 60
+                    let stepH = (lastH - firstH) > 6 ? 2 : 1
+                    let hours = firstH <= lastH ? Array(stride(from: firstH, through: lastH, by: stepH)) : []
+                    let w = geo.size.width
                     ZStack(alignment: .topLeading) {
                         ForEach(hours, id: \.self) { hr in
-                            let x = CGFloat(hr - model.dayStartHour) / CGFloat(span) * geo.size.width
+                            let x = CGFloat(hr * 60 - startM) / CGFloat(span) * w
                             Text(String(format: "%02d", hr))
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(.secondary)
                                 .fixedSize()
-                                .offset(x: hr == model.dayStartHour ? 0 : (hr == model.dayEndHour ? x - 14 : x - 7))
+                                .offset(x: x <= 1 ? 0 : (x >= w - 8 ? x - 14 : x - 7))
                         }
                     }
                 }
@@ -657,7 +688,7 @@ struct PanelView: View {
                     Text("Unsit").font(.system(size: 13, weight: .semibold))
                 }
                 Spacer()
-                Text(String(format: "Today %02d:00 to %02d:00", model.dayStartHour, model.dayEndHour))
+                Text("Today \(UnsitModel.hhmm(model.dayStartMinute)) to \(UnsitModel.hhmm(model.dayEndMinute))")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                 SettingsMenu()
@@ -736,23 +767,10 @@ struct SettingsMenu: View {
     var body: some View {
         Menu {
             Toggle("Corner mode", isOn: $model.cornerMode)
-            Toggle("Open at login", isOn: Binding(
-                get: { SMAppService.mainApp.status == .enabled },
-                set: { on in
-                    if on { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() }
-                }
-            ))
-            Menu("Daily goal") {
-                ForEach([6_000, 8_000, 10_000, 12_000], id: \.self) { g in
-                    Button("\(g.formatted()) steps") { model.stepGoal = g }
-                }
+            Button("Settings…") {
+                openWindow(id: "settings")
+                NSApp.activate()
             }
-            Menu("Workday") {
-                Button("08:00 to 18:00") { model.dayStartHour = 8; model.dayEndHour = 18 }
-                Button("09:00 to 19:00") { model.dayStartHour = 9; model.dayEndHour = 19 }
-                Button("10:00 to 20:00") { model.dayStartHour = 10; model.dayEndHour = 20 }
-            }
-            Button("Choose steps file…") { model.chooseStepsFile() }
             Button("Set up again…") {
                 openWindow(id: "onboarding")
                 NSApp.activate()
@@ -765,6 +783,87 @@ struct SettingsMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+    }
+}
+
+// MARK: - Settings
+
+/// A Date binding for a time of day stored as minutes after midnight.
+func minuteBinding(get: @escaping () -> Int, set: @escaping (Int) -> Void) -> Binding<Date> {
+    Binding(
+        get: {
+            let m = get()
+            return Calendar.current.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: Date()) ?? Date()
+        },
+        set: { d in
+            let c = Calendar.current.dateComponents([.hour, .minute], from: d)
+            set((c.hour ?? 0) * 60 + (c.minute ?? 0))
+        }
+    )
+}
+
+var openAtLoginBinding: Binding<Bool> {
+    Binding(
+        get: { SMAppService.mainApp.status == .enabled },
+        set: { on in
+            if on { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() }
+        }
+    )
+}
+
+struct WorkdayPickers: View {
+    @EnvironmentObject var model: UnsitModel
+    var body: some View {
+        DatePicker("Workday starts",
+                   selection: minuteBinding(get: { model.dayStartMinute },
+                                            set: { model.setWorkday(start: $0, end: model.dayEndMinute) }),
+                   displayedComponents: .hourAndMinute)
+        DatePicker("Workday ends",
+                   selection: minuteBinding(get: { model.dayEndMinute },
+                                            set: { model.setWorkday(start: model.dayStartMinute, end: $0) }),
+                   displayedComponents: .hourAndMinute)
+    }
+}
+
+struct SettingsView: View {
+    @EnvironmentObject var model: UnsitModel
+
+    private var waterGoalText: String {
+        (Double(model.waterGoalML) / 1000).formatted(.number.precision(.fractionLength(0...2))) + " L"
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                WorkdayPickers()
+            } header: {
+                Text("Workday")
+            } footer: {
+                Text("Unsit paces your steps and looks for gaps between meetings in these hours.")
+                    .foregroundStyle(.secondary)
+            }
+            Section("Goals") {
+                Stepper("Steps a day: \(model.stepGoal.formatted())", value: $model.stepGoal, in: 2_000...30_000, step: 500)
+                Stepper("Water a day: \(waterGoalText)", value: $model.waterGoalML, in: 500...5_000, step: 250)
+                Picker("Glass size", selection: $model.glassML) {
+                    ForEach([200, 250, 330, 500], id: \.self) { Text("\($0) ml").tag($0) }
+                }
+            }
+            Section("Where Unsit lives") {
+                Picker("Show in", selection: $model.cornerMode) {
+                    Text("Menu bar").tag(false)
+                    Text("Screen corner").tag(true)
+                }
+                .pickerStyle(.segmented)
+                Toggle("Open at login", isOn: openAtLoginBinding)
+            }
+            Section("Steps from iPhone") {
+                LabeledContent("Last update", value: model.syncText)
+                Button("Choose steps file…") { model.chooseStepsFile() }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 460, height: 560)
     }
 }
 
@@ -1249,6 +1348,10 @@ struct OnboardingView: View {
             .padding(16)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
             .padding(.top, 26)
+            HStack(spacing: 18) {
+                WorkdayPickers()
+            }
+            .padding(.top, 18)
             HStack {
                 Text("Where should Unsit live?").font(.system(size: 12.5)).foregroundStyle(.secondary)
                 Spacer()

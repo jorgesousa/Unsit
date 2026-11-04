@@ -10,6 +10,7 @@ Your chair can wait. Unsit is a macOS menu bar app that gets you to 10,000 steps
 - **Corner mode:** Unsit docks in the bottom-right corner of the screen as a quarter circle and opens on hover.
 - **Gap nudge:** when a gap opens between meetings and you're behind pace, a strip drops from the top of the screen with exactly how long to walk.
 - **Guided setup:** a four-step window on first launch connects your iPhone and calendar.
+- **Settings:** your workday hours (any start and end time), daily steps and water goals, glass size, menu bar or corner, open at login.
 
 The screenshots in `docs/` are design renders.
 
