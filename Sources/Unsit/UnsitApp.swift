@@ -235,22 +235,32 @@ final class WindowRouter {
     weak var model: UnsitModel?
     private var windows: [String: NSWindow] = [:]
 
-    func showSettings() { show(id: "settings", title: "Unsit Settings") { SettingsView() } }
-    func showOnboarding() { show(id: "onboarding", title: "Welcome to Unsit") { OnboardingView() } }
+    func showSettings() {
+        show(id: "settings", title: "General", toolbarTabs: true) { SettingsTabs.controller(model: $0) }
+    }
+
+    func showOnboarding() {
+        show(id: "onboarding", title: "Welcome to Unsit") { model in
+            let controller = NSHostingController(rootView: OnboardingView().environmentObject(model))
+            controller.sizingOptions = [.preferredContentSize]
+            return controller
+        }
+    }
+
     func close(_ id: String) { windows[id]?.close() }
 
-    private func show<V: View>(id: String, title: String, @ViewBuilder content: () -> V) {
+    private func show(id: String, title: String, toolbarTabs: Bool = false,
+                      make: (UnsitModel) -> NSViewController) {
         guard let model else { return }
         MenuBarController.shared?.hidePanel()
         let window: NSWindow
         if let existing = windows[id], existing.isVisible {
             window = existing
         } else {
-            let controller = NSHostingController(rootView: content().environmentObject(model))
-            controller.sizingOptions = [.preferredContentSize]
-            window = NSWindow(contentViewController: controller)
+            window = NSWindow(contentViewController: make(model))
             window.title = title
             window.styleMask = [.titled, .closable]
+            if toolbarTabs { window.toolbarStyle = .preference }
             window.isReleasedWhenClosed = false
             window.center()
             windows[id] = window
@@ -1287,7 +1297,37 @@ struct WorkdayPickers: View {
     }
 }
 
+/// Settings opens as a native preferences window: General, iPhone and Author tabs in the toolbar.
+@MainActor
+enum SettingsTabs {
+    static let size = CGSize(width: 480, height: 440)
+
+    static func controller(model: UnsitModel) -> NSViewController {
+        let tabs = NSTabViewController()
+        tabs.tabStyle = .toolbar
+        tabs.addTabViewItem(item(GeneralSettings(), label: "General", symbol: "gearshape", model: model))
+        tabs.addTabViewItem(item(PhoneSettings(), label: "iPhone", symbol: "iphone", model: model))
+        tabs.addTabViewItem(item(AuthorSettings(), label: "Author", symbol: "person.crop.circle", model: model))
+        return tabs
+    }
+
+    private static func item<V: View>(_ view: V, label: String, symbol: String, model: UnsitModel) -> NSTabViewItem {
+        let host = NSHostingController(rootView: view.environmentObject(model))
+        host.sizingOptions = [.preferredContentSize]
+        host.title = label   // the window title follows the selected tab
+        let item = NSTabViewItem(viewController: host)
+        item.label = label
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        return item
+    }
+}
+
+/// Kept for the SwiftUI Settings scene; Unsit itself opens SettingsTabs.
 struct SettingsView: View {
+    var body: some View { GeneralSettings() }
+}
+
+struct GeneralSettings: View {
     @EnvironmentObject var model: UnsitModel
 
     private var waterGoalText: String {
@@ -1311,16 +1351,88 @@ struct SettingsView: View {
                     ForEach([200, 250, 330, 500], id: \.self) { Text("\($0) ml").tag($0) }
                 }
             }
-            Section("General") {
+            Section {
                 Toggle("Open at login", isOn: openAtLoginBinding)
-            }
-            Section("Steps from iPhone") {
-                LabeledContent("Last update", value: model.syncText)
-                Button("Choose steps file…") { model.chooseStepsFile() }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 560)
+        .frame(width: SettingsTabs.size.width, height: SettingsTabs.size.height)
+    }
+}
+
+struct PhoneSettings: View {
+    @EnvironmentObject var model: UnsitModel
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Last update", value: model.syncText)
+                if let status = model.stepsStatus {
+                    Text(status)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let path = model.customStepsPath {
+                    LabeledContent("File", value: (path as NSString).lastPathComponent)
+                }
+            } header: {
+                Text("Steps from iPhone")
+            } footer: {
+                Text("The Unsit Sync shortcut copies today's steps from Apple Health to iCloud Drive. Unsit reads them from there.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Button("Choose steps file…") { model.chooseStepsFile() }
+                Button("Set up the iPhone again…") { WindowRouter.shared.showOnboarding() }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: SettingsTabs.size.width, height: SettingsTabs.size.height)
+    }
+}
+
+struct AuthorSettings: View {
+    static let authorURL = URL(string: "https://github.com/jorgesousa")!
+
+    private var version: String {
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        return "Version \(v ?? "0.1.0")"
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 96, height: 96)
+                .accessibilityHidden(true)
+            Text("Unsit")
+                .font(.system(size: 20, weight: .semibold))
+                .padding(.top, 14)
+            Text(version)
+                .font(.system(size: 13).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .padding(.top, 3)
+            Text("Made by Jorge Sousa")
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.top, 24)
+            Link("github.com/jorgesousa", destination: Self.authorURL)
+                .font(.system(size: 13))
+                .padding(.top, 4)
+            Divider()
+                .frame(width: 300)
+                .padding(.vertical, 20)
+            Text("Your chair can wait. Steps come from Apple Health on your iPhone; your calendar is read on this Mac and never leaves it.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 340)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .frame(width: SettingsTabs.size.width, height: SettingsTabs.size.height)
     }
 }
 
