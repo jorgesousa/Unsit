@@ -18,6 +18,21 @@ enum UnsitConfig {
     /// iCloud Drive › Shortcuts › Unsit › steps.json
     static let stepsFile = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Mobile Documents/iCloud~is~workflow~my~workflows/Documents/Unsit/steps.json")
+    /// Other places the shortcut's Save File action commonly ends up writing to.
+    static let candidateFiles: [URL] = {
+        let docs = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mobile Documents")
+        let folders = [
+            "iCloud~is~workflow~my~workflows/Documents/Unsit",
+            "iCloud~is~workflow~my~workflows/Documents",
+            "com~apple~CloudDocs/Shortcuts/Unsit",
+            "com~apple~CloudDocs/Unsit",
+            "com~apple~CloudDocs"
+        ]
+        // Shortcuts often saves text as .txt even when the name says .json, so accept both.
+        return folders.flatMap { f in
+            ["steps.json", "steps.txt"].map { docs.appendingPathComponent(f).appendingPathComponent($0) }
+        }
+    }()
     static let awayAfter: TimeInterval = 5 * 60
     static let stepsPerMinute = 100.0
 }
@@ -125,6 +140,7 @@ final class UnsitModel: ObservableObject {
     @Published private(set) var now = Date()
     @Published private(set) var steps = 0
     @Published private(set) var stepsUpdatedAt: Date?
+    @Published private(set) var stepsStatus: String?
     @Published private(set) var waterML = 0
     @Published private(set) var events: [DayEvent] = []
     @Published private(set) var calendarAllowed = false
@@ -196,27 +212,69 @@ final class UnsitModel: ObservableObject {
     // MARK: Steps (from the shortcut's file)
 
     func refreshSteps() {
-        let url = UnsitConfig.stepsFile
         let fm = FileManager.default
+        func modified(_ u: URL) -> Date {
+            ((try? fm.attributesOfItem(atPath: u.path))?[.modificationDate] as? Date) ?? .distantPast
+        }
+        // Use whichever candidate exists and was written most recently.
+        let existing = UnsitConfig.candidateFiles.filter { fm.fileExists(atPath: $0.path) }
+        let url = existing.max { modified($0) < modified($1) } ?? UnsitConfig.stepsFile
+        let folder = url.deletingLastPathComponent()
+
         if !fm.fileExists(atPath: url.path) {
             // iCloud may keep only a placeholder until the file is downloaded.
-            let placeholder = url.deletingLastPathComponent().appendingPathComponent(".steps.json.icloud")
-            if fm.fileExists(atPath: placeholder.path) { try? fm.startDownloadingUbiquitousItem(at: url) }
+            let placeholders = UnsitConfig.candidateFiles.filter {
+                fm.fileExists(atPath: $0.deletingLastPathComponent().appendingPathComponent("." + $0.lastPathComponent + ".icloud").path)
+            }
+            if let p = placeholders.first {
+                try? fm.startDownloadingUbiquitousItem(at: p)
+                stepsStatus = "Found the file in iCloud Drive. Downloading it now…"
+            } else if fm.fileExists(atPath: folder.path) {
+                let names = (try? fm.contentsOfDirectory(atPath: folder.path)) ?? []
+                stepsStatus = names.isEmpty
+                    ? "The Unsit folder is there but empty. Run Unsit Sync on your iPhone."
+                    : "The Unsit folder has \(names.joined(separator: ", ")) but no steps file. Check the file name in the shortcut's Save File action."
+            } else {
+                stepsStatus = "No Unsit folder in iCloud Drive › Shortcuts yet. Run Unsit Sync on your iPhone, and check Save File points to Shortcuts › Unsit."
+            }
             return
         }
-        guard let data = try? Data(contentsOf: url),
-              let file = try? JSONDecoder().decode(StepsFile.self, from: data) else { return }
+
+        let raw: Data
+        do {
+            raw = try Data(contentsOf: url)
+        } catch {
+            stepsStatus = "Unsit can't open \(url.lastPathComponent) (\(error.localizedDescription)). Allow it under System Settings › Privacy & Security › Files and Folders."
+            return
+        }
+
+        // The iPhone keyboard often turns straight quotes into curly ones; accept both.
+        let text = (String(data: raw, encoding: .utf8) ?? "")
+            .replacingOccurrences(of: "\u{201C}", with: "\"")
+            .replacingOccurrences(of: "\u{201D}", with: "\"")
+            .replacingOccurrences(of: "\u{201E}", with: "\"")
+            .replacingOccurrences(of: "\u{2033}", with: "\"")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let file = try? JSONDecoder().decode(StepsFile.self, from: Data(text.utf8)) else {
+            stepsStatus = "Found \(url.lastPathComponent) but couldn't read it. It contains: \(text.prefix(120))"
+            return
+        }
 
         var stamp = Self.parseDate(file.updatedAt)
         if stamp == nil, let attrs = try? fm.attributesOfItem(atPath: url.path) {
             stamp = attrs[.modificationDate] as? Date
         }
-        guard let when = stamp, Calendar.current.isDate(when, inSameDayAs: now) else { return }
+        guard let when = stamp, Calendar.current.isDate(when, inSameDayAs: now) else {
+            let day = stamp.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "an unknown day"
+            stepsStatus = "Found steps from \(day), not today. Run Unsit Sync on your iPhone again."
+            return
+        }
 
         let newSteps = Int(file.steps.rounded())
         if stepsUpdatedAt != nil, newSteps - steps >= 300 { lastMove = now }   // you walked
         steps = newSteps
         stepsUpdatedAt = when
+        stepsStatus = nil
     }
 
     static func parseDate(_ s: String) -> Date? {
@@ -1105,7 +1163,7 @@ struct OnboardingView: View {
             .padding(.top, 30)
             Text(connected
                  ? "Does that match the Health app? If it shows roughly double, open the shortcut and check that Group By is set to Day."
-                 : "Unsit looks for iCloud Drive › Shortcuts › Unsit › steps.json.")
+                 : (model.stepsStatus ?? "Unsit looks for steps.json in iCloud Drive › Shortcuts › Unsit."))
                 .font(.system(size: 12.5)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 14)
