@@ -380,12 +380,12 @@ final class UnsitModel: ObservableObject {
         calendarAllowed = EKEventStore.authorizationStatus(for: .event) == .fullAccess
         tick()
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+            Task { @MainActor [weak self] in self?.tick() }
         }
         let nc = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification] {
             nc.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.isAway = true }
+                Task { @MainActor [weak self] in self?.isAway = true }
             }
         }
     }
@@ -1500,7 +1500,7 @@ final class UpdateChecker: ObservableObject {
     func start() {
         guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.check() }
+            Task { @MainActor [weak self] in await self?.check() }
         }
         timer?.tolerance = 3600
         Task { await check() }
