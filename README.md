@@ -8,7 +8,7 @@
 
 A macOS menu bar app that gets you to 10,000 steps and enough water during the workday. It reads your calendar, finds the gaps between meetings, and tells you when to walk. Your steps arrive from your iPhone and Apple Watch on their own.
 
-[![Version 0.5.2](https://img.shields.io/badge/version-0.5.2-2F7DF6)](Resources/Info.plist)
+[![Version 0.5.3](https://img.shields.io/badge/version-0.5.3-2F7DF6)](Resources/Info.plist)
 [![License: Sustainable Use 1.0](https://img.shields.io/badge/license-Sustainable%20Use%201.0-8B5CF6)](LICENSE.md)
 [![Build](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml/badge.svg)](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white)
@@ -20,7 +20,7 @@ A macOS menu bar app that gets you to 10,000 steps and enough water during the w
   <img src="docs/demo.webp" width="860" alt="Unsit demo: a day fills with meetings, a black island grows out of the notch saying Walk 15 min until 11:30, Going turns it into a walk timer, the menu bar panel shows steps, gaps and water, steps from the iPhone reach two Macs at once, and the step and water goals you set fill up">
 </a>
 
-<sub>▶ <a href="https://github.com/jorgesousa/Unsit/raw/main/docs/unsit.mp4">Watch with sound</a> · 24 seconds</sub>
+<sub>▶ <a href="https://github.com/jorgesousa/Unsit/raw/main/docs/unsit.mp4">Watch with sound</a> · 24 seconds · <a href="docs/demo.gif">GIF</a></sub>
 
 </div>
 
