@@ -8,7 +8,7 @@
 
 A macOS menu bar app that gets you to 10,000 steps and enough water during the workday. It reads your calendar, finds the gaps between meetings, and tells you when to walk. Your steps arrive from your iPhone and Apple Watch on their own.
 
-[![Version 0.5.1](https://img.shields.io/badge/version-0.5.1-2F7DF6)](Resources/Info.plist)
+[![Version 0.5.2](https://img.shields.io/badge/version-0.5.2-2F7DF6)](Resources/Info.plist)
 [![License: Sustainable Use 1.0](https://img.shields.io/badge/license-Sustainable%20Use%201.0-8B5CF6)](LICENSE.md)
 [![Build](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml/badge.svg)](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white)
@@ -242,7 +242,7 @@ The tests cover the update check: comparing versions, reading GitHub's latest re
 | [`Resources/Info.plist`](Resources/Info.plist) | Version, bundle id, calendar permission text |
 | [`scripts/build-app.sh`](scripts/build-app.sh) | Builds, signs, installs and opens `Unsit.app` |
 | [`scripts/notarize.sh`](scripts/notarize.sh) | Notarizes for sharing (paid account) |
-| [`.github/workflows/build.yml`](.github/workflows/build.yml) | Tests and builds on macOS 14 |
+| [`.github/workflows/build.yml`](.github/workflows/build.yml) | Tests and builds on macOS 15 |
 
 ### Versions
 

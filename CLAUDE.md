@@ -12,7 +12,7 @@ scripts/build-app.sh --open    # build, install to /Applications, open
 SIGN_IDENTITY="Unsit Local" scripts/build-app.sh --open   # keeps calendar permission between builds
 ```
 
-`build-app.sh` runs `swift build -c release`, assembles `Unsit.app` with `Resources/Info.plist` and `Resources/AppIcon.icns`, signs ad-hoc (or with `SIGN_IDENTITY`). CI: `.github/workflows/build.yml` runs both on macos-14.
+`build-app.sh` runs `swift build -c release`, assembles `Unsit.app` with `Resources/Info.plist` and `Resources/AppIcon.icns`, signs ad-hoc (or with `SIGN_IDENTITY`). CI: `.github/workflows/build.yml` runs both on macos-15 (macos-14 was retired).
 
 ## Layout
 
@@ -22,7 +22,7 @@ SIGN_IDENTITY="Unsit Local" scripts/build-app.sh --open   # keeps calendar permi
 
 ## Conventions
 
-- **Versioning (like neteinstein/Calendar-Sync):** every change that lands on main bumps `CFBundleShortVersionString` (patch) and `CFBundleVersion` (+1) in `Resources/Info.plist`, and the version badge in README. New features bump the minor. Releases tagged `v<version>`. Current: 0.5.1 (build 10), not yet released.
+- **Versioning (like neteinstein/Calendar-Sync):** every change that lands on main bumps `CFBundleShortVersionString` (patch) and `CFBundleVersion` (+1) in `Resources/Info.plist`, and the version badge in README. New features bump the minor. Releases tagged `v<version>`. Current: 0.5.2 (build 11), not yet released.
 - **Design system "A, native premium":** graphite #16181B, paper #FBFBFC, mist #CDD1D7 (meetings), signal orange #FF5A1F (only for time to move / warnings), water blue #2F7DF6 (only water). SF Pro, sentence case, no decoration. Motion: ease-out cubic-bezier(0.23, 1, 0.32, 1), under 300 ms, scale 0.95–0.97 on press.
 - **Panel top (decided):** left = steps "of 10 000 steps"; right = time "free of meetings today". The bottom-right line only appears for warnings ("1 240 behind pace", "… of walking won't fit"). How much to walk lives in the gap line under the strip.
 - **Copy:** English UI, plain verbs, specific numbers. Walking time assumes 100 steps/min.
@@ -34,7 +34,7 @@ Sustainable Use License 1.0 (`SUL-1.0`), same as Calendar-Sync: `LICENSE.md` + R
 
 ## Open items
 
-- Repo is live at github.com/jorgesousa/Unsit (public); CI is green on macos-14. Its older Swift is stricter about concurrency than local Xcode: in `Task { @MainActor … }` inside a `[weak self]` closure, capture `[weak self]` again.
+- Repo is live at github.com/jorgesousa/Unsit (public); CI runs on macos-15. Its older Swift is stricter about concurrency than local Xcode: in `Task { @MainActor … }` inside a `[weak self]` closure, capture `[weak self]` again.
 - `UnsitConfig.shortcutLink` is still a placeholder; needs the iCloud link of the shared "Unsit Sync" shortcut (the setup QR code uses it).
 - Water sync between Macs over the same ntfy code (water is still per Mac).
 - Pre-fill the ntfy action in the shared shortcut with an Import Question asking for the code.
