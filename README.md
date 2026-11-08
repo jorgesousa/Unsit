@@ -8,7 +8,7 @@
 
 A macOS menu bar app that gets you to 10,000 steps and enough water during the workday. It reads your calendar, finds the gaps between meetings, and tells you when to walk. Your steps arrive from your iPhone and Apple Watch on their own.
 
-[![Version 0.5.3](https://img.shields.io/badge/version-0.5.3-2F7DF6)](Resources/Info.plist)
+[![Version 0.5.4](https://img.shields.io/badge/version-0.5.4-2F7DF6)](Resources/Info.plist)
 [![License: Sustainable Use 1.0](https://img.shields.io/badge/license-Sustainable%20Use%201.0-8B5CF6)](LICENSE.md)
 [![Build](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml/badge.svg)](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white)
@@ -16,11 +16,7 @@ A macOS menu bar app that gets you to 10,000 steps and enough water during the w
 ![Menu bar app](https://img.shields.io/badge/lives%20in-the%20menu%20bar-FF5A1F)
 ![No developer account](https://img.shields.io/badge/Apple%20Developer%20account-not%20needed-16181B)
 
-<a href="https://github.com/jorgesousa/Unsit/raw/main/docs/unsit.mp4">
-  <img src="docs/demo.webp" width="860" alt="Unsit demo: a day fills with meetings, a black island grows out of the notch saying Walk 15 min until 11:30, Going turns it into a walk timer, the menu bar panel shows steps, gaps and water, steps from the iPhone reach two Macs at once, and the step and water goals you set fill up">
-</a>
-
-<sub>▶ <a href="https://github.com/jorgesousa/Unsit/raw/main/docs/unsit.mp4">Watch with sound</a> · 24 seconds · <a href="docs/demo.gif">GIF</a></sub>
+<a href="https://github.com/jorgesousa/Unsit/raw/main/docs/unsit.mp4"><img src="docs/demo.gif" width="720" alt="Unsit demo: a day fills with meetings, a black island grows out of the notch saying Walk 15 min until 11:30, Going turns it into a walk timer, the menu bar panel shows steps, gaps and water, steps from the iPhone reach two Macs at once, and the step and water goals you set fill up"></a>
 
 </div>
 
@@ -46,6 +42,9 @@ See [Get started](#get-started) for every step, and [Updating](#updating) for la
 Ten thousand steps sounds easy until your calendar is back to back. The time to walk is usually there: fifteen minutes between two calls, half an hour before lunch. You just don't notice it until it's gone.
 
 Unsit looks at your day the way you would if you had time to plan it: where the meetings are, where the gaps are, and how far behind you are. When a gap opens and you're behind, it tells you, with how long to walk.
+
+<a href="docs/unsit.mp4"><img src="docs/poster.jpg" alt="Watch the 24-second video" width="560"></a>
+<br><sub>▶ <a href="docs/unsit.mp4">Watch the 24-second video</a> (with sound). The day, meetings and numbers in it are made up.</sub>
 
 ## What you get
 

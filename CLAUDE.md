@@ -18,11 +18,11 @@ SIGN_IDENTITY="Unsit Local" scripts/build-app.sh --open   # keeps calendar permi
 
 - `Sources/UnsitCore` — platform-independent logic (`UpdateCheck`), unit tested in `Tests/UnsitCoreTests`.
 - `Sources/Unsit/UnsitApp.swift` — the whole app: `UnsitConfig`, `AppDelegate`, `MenuBarController` + `MenuPanel` (our own NSPanel under an NSStatusItem, deliberately not MenuBarExtra: its system container showed translucent bands above and below the content), `WindowRouter` (setup and settings windows via AppKit), `UnsitModel`, `PanelView`, `DayStrip`, `WaterCups`, `NudgePanelController`, `SettingsTabs` (NSTabViewController, toolbar style: General, iPhone, Author), `UpdateChecker`, `OnboardingView`.
-- `docs/` — icon, real panel screenshot, `unsit.mp4` + `demo.webp` + `demo.gif` (made with /brag-slim; sources in the gitignored `brag-output/work`).
+- `docs/` — icon, real panel screenshot, `demo.gif` (top of README, like jorgesousa/level-liar), `poster.jpg` → `unsit.mp4` (24 s, under Why) (made with /brag-slim; sources in the gitignored `brag-output/work`).
 
 ## Conventions
 
-- **Versioning (like neteinstein/Calendar-Sync):** every change that lands on main bumps `CFBundleShortVersionString` (patch) and `CFBundleVersion` (+1) in `Resources/Info.plist`, and the version badge in README. New features bump the minor. Releases tagged `v<version>`. Current: 0.5.3 (build 12), not yet released.
+- **Versioning (like neteinstein/Calendar-Sync):** every change that lands on main bumps `CFBundleShortVersionString` (patch) and `CFBundleVersion` (+1) in `Resources/Info.plist`, and the version badge in README. New features bump the minor. Releases tagged `v<version>`. Current: 0.5.4 (build 13), not yet released.
 - **Design system "A, native premium":** graphite #16181B, paper #FBFBFC, mist #CDD1D7 (meetings), signal orange #FF5A1F (only for time to move / warnings), water blue #2F7DF6 (only water). SF Pro, sentence case, no decoration. Motion: ease-out cubic-bezier(0.23, 1, 0.32, 1), under 300 ms, scale 0.95–0.97 on press.
 - **Panel top (decided):** left = steps "of 10 000 steps"; right = time "free of meetings today". The bottom-right line only appears for warnings ("1 240 behind pace", "… of walking won't fit"). How much to walk lives in the gap line under the strip.
 - **Copy:** English UI, plain verbs, specific numbers. Walking time assumes 100 steps/min.
