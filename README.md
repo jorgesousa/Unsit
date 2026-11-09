@@ -8,7 +8,7 @@
 
 A macOS menu bar app that gets you to 10,000 steps and enough water during the workday. It reads your calendar, finds the gaps between meetings, and tells you when to walk. Your steps arrive from your iPhone and Apple Watch on their own.
 
-[![Version 0.5.4](https://img.shields.io/badge/version-0.5.4-2F7DF6)](Resources/Info.plist)
+[![Version 0.5.5](https://img.shields.io/badge/version-0.5.5-2F7DF6)](Resources/Info.plist)
 [![License: Sustainable Use 1.0](https://img.shields.io/badge/license-Sustainable%20Use%201.0-8B5CF6)](LICENSE.md)
 [![Build](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml/badge.svg)](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white)
@@ -16,7 +16,7 @@ A macOS menu bar app that gets you to 10,000 steps and enough water during the w
 ![Menu bar app](https://img.shields.io/badge/lives%20in-the%20menu%20bar-FF5A1F)
 ![No developer account](https://img.shields.io/badge/Apple%20Developer%20account-not%20needed-16181B)
 
-<a href="https://github.com/jorgesousa/Unsit/raw/main/docs/unsit.mp4"><img src="docs/demo.gif" width="720" alt="Unsit demo: a day fills with meetings, a black island grows out of the notch saying Walk 15 min until 11:30, Going turns it into a walk timer, the menu bar panel shows steps, gaps and water, steps from the iPhone reach two Macs at once, and the step and water goals you set fill up"></a>
+<a href="https://github.com/jorgesousa/Unsit/raw/main/docs/unsit.mp4"><img src="docs/demo.gif" width="720" alt="Unsit demo: Unsit reads your calendar and the day fills with meetings, a black island grows out of the notch saying Walk 15 min until 11:30, Going turns it into a walk timer, the menu bar panel shows steps, gaps and water, steps from the iPhone reach two Macs at once, and the step and water goals you set fill up"></a>
 
 </div>
 
@@ -58,8 +58,8 @@ A free Apple shortcut sends today's steps from Apple Health to your Mac's privat
 </td>
 <td width="50%" valign="top">
 
-### 📅 Your day on one strip
-Meetings in grey, the next gap in solid orange, later gaps outlined. Hover over any block to see the meeting, or how long the gap is and how many steps fit in it.
+### 📅 Synced with your calendar
+Unsit reads every calendar in your Mac's Calendar app: iCloud, Google, Microsoft 365 or Exchange, and any other account you've added there. New or moved meetings show up within 5 minutes (⌘R for straight away). Your day sits on one strip: meetings in grey, the next gap in solid orange, later gaps outlined. Hover over a block to see the meeting, or how many steps fit in the gap.
 
 </td>
 </tr>
@@ -136,7 +136,7 @@ It posts it to `https://ntfy.sh/unsit-<code>`, where the code is a random 20-cha
 
 **Walking time.** Unsit counts 100 steps a minute, a moderate walking pace in studies of adult cadence (about 130 is brisk). So 4,000 steps left is about 40 minutes.
 
-**Meetings.** Every calendar in Calendar.app counts, except all-day events and events marked Free. Your calendar is read on this Mac and nothing leaves it.
+**Meetings.** Unsit uses the calendars macOS already syncs: every account in Calendar.app (iCloud, Google, Microsoft 365, Exchange, CalDAV) counts, except all-day events and events marked Free. It reads today's meetings again every 5 minutes, or when you press ⌘R. Your calendar is read on this Mac and nothing leaves it. A work calendar you can't add to Calendar.app (Outlook on the web only, say) won't show up.
 
 ## Get started
 
