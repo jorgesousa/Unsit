@@ -8,13 +8,14 @@
 
 A macOS menu bar app that gets you to 10,000 steps and enough water during the workday. It reads your calendar, finds the gaps between meetings, and tells you when to walk. Your steps arrive from your iPhone and Apple Watch on their own.
 
-[![Version 0.5.5](https://img.shields.io/badge/version-0.5.5-2F7DF6)](Resources/Info.plist)
+[![Version 0.5.6](https://img.shields.io/badge/version-0.5.6-2F7DF6)](Resources/Info.plist)
+[![Download](https://img.shields.io/github/v/release/jorgesousa/Unsit?label=download&color=FF5A1F)](https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg)
 [![License: Sustainable Use 1.0](https://img.shields.io/badge/license-Sustainable%20Use%201.0-8B5CF6)](LICENSE.md)
 [![Build](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml/badge.svg)](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white)
 ![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white)
 ![Menu bar app](https://img.shields.io/badge/lives%20in-the%20menu%20bar-FF5A1F)
-![No developer account](https://img.shields.io/badge/Apple%20Developer%20account-not%20needed-16181B)
+![Notarized](https://img.shields.io/badge/notarized-by%20Apple-16181B?logo=apple&logoColor=white)
 
 <a href="https://github.com/jorgesousa/Unsit/raw/main/docs/unsit.mp4"><img src="docs/demo.gif" width="720" alt="Unsit demo: Unsit reads your calendar and the day fills with meetings, a black island grows out of the notch saying Walk 15 min until 11:30, Going turns it into a walk timer, the menu bar panel shows steps, gaps and water, steps from the iPhone reach two Macs at once, and the step and water goals you set fill up"></a>
 
@@ -24,7 +25,16 @@ A macOS menu bar app that gets you to 10,000 steps and enough water during the w
 
 ## Install
 
-You need **macOS 14 or later**, the **Xcode command line tools**, and an **iPhone with Apple Health**. The Mac doesn't need your iCloud account, so a work laptop is fine. Android phones are coming soon.
+You need **macOS 14 or later** and an **iPhone with Apple Health**. The Mac doesn't need your iCloud account, so a work laptop is fine. Android phones are coming soon.
+
+**[⬇ Download Unsit.dmg](https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg)**, open it and drag **Unsit** to **Applications**. It's signed with Developer ID and notarized by Apple, so it opens with a double-click. A setup window then walks you through connecting your iPhone and your calendar, in about five minutes.
+
+<details>
+<summary><b>Or build it yourself</b></summary>
+
+<br>
+
+You need the **Xcode command line tools**.
 
 ```bash
 xcode-select --install          # only if you don't have the command line tools yet
@@ -33,7 +43,9 @@ cd Unsit
 scripts/build-app.sh --open
 ```
 
-That builds `Unsit.app`, copies it to `/Applications` and opens it. A setup window then walks you through connecting your iPhone and your calendar, in about five minutes. No App Store, and no Apple Developer account.
+That builds `Unsit.app`, copies it to `/Applications` and opens it.
+
+</details>
 
 See [Get started](#get-started) for every step, and [Updating](#updating) for later.
 
@@ -190,7 +202,11 @@ The last setup step shows your day on the strip and asks for calendar access. Se
 
 ## Updating
 
-Unsit checks GitHub once a day. When a newer version is out, the gear menu shows **Update to …**, and Settings › **Author** shows these steps:
+Unsit checks GitHub once a day. When a newer version is out, the gear menu shows **Update to …**.
+
+**Downloaded the app?** Download the new [Unsit.dmg](https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg), quit Unsit and drag the new one over the old one in Applications.
+
+**Built it yourself?** Settings › **Author** shows these steps:
 
 ```bash
 cd Unsit          # the folder you cloned
@@ -212,17 +228,16 @@ Ad-hoc signed builds look like a new app to macOS each time, so it asks for cale
 SIGN_IDENTITY="Unsit Local" scripts/build-app.sh --open
 ```
 
-### Share a ready-made app
+### Releases
 
-Anyone can build from source with the steps above. To hand out an app that opens without a Gatekeeper warning, you need the Apple Developer Program (99 USD a year) to sign with Developer ID and notarize:
+Releases on GitHub carry `Unsit.dmg` and `Unsit.zip`, signed with Developer ID and notarized. To make one (needs the Apple Developer Program and, once, `xcrun notarytool store-credentials unsit-notary --apple-id … --team-id …`):
 
 ```bash
-xcrun notarytool store-credentials unsit-notary --apple-id "you@example.com" --team-id "TEAMID" --password "app-specific-password"
-SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" scripts/build-app.sh
-scripts/notarize.sh
+SIGN_IDENTITY="Developer ID Application: Jorge Sousa (L4ZLV2Y44P)" scripts/build-app.sh
+scripts/notarize.sh             # notarizes and staples build/Unsit.app, writes build/Unsit.zip
 ```
 
-That produces `build/Unsit.zip`, notarized and stapled.
+Then put the app in a disk image with a link to Applications, sign it, notarize and staple it, and attach both files to a release tagged `v<version>`.
 
 ## Development
 
