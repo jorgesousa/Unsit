@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unsit · Your chair can wait</title>
+<meta name="description" content="A free macOS menu bar app that syncs with your calendar, finds the gaps between your meetings and tells you when to walk, so you hit the step and water goals you set.">
+<meta property="og:title" content="Unsit · Your chair can wait">
+<meta property="og:description" content="Finds the gaps between your meetings and tells you when to walk. Free for macOS 14+.">
+<meta property="og:image" content="https://jorgesousa.github.io/Unsit/poster.jpg">
+<link rel="icon" href="icon.png">
+<style>
+  :root {
+    --paper: #FBFBFC; --ink: #16181B; --mist: #CDD1D7; --mist-ink: #3a3f46;
+    --signal: #FF5A1F; --signal-ink: #8a2a06; --water: #2F7DF6;
+    --line: rgba(22,24,27,.09); --soft: #5b616a;
+    --gutter: 72px; --hour: 168px;
+    --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 17px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    font-feature-settings: "tnum" 0; -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--signal); color: #fff; }
+  a { color: inherit; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  :focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; border-radius: 6px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .display { font-family: -apple-system, "SF Pro Display", BlinkMacSystemFont, "Helvetica Neue", sans-serif; letter-spacing: -0.035em; font-weight: 650; }
+
+  /* Top bar: Calendar's toolbar, reduced to what a visitor needs */
+  .bar { position: sticky; top: 0; z-index: 20; background: rgba(251,251,252,.86); backdrop-filter: saturate(1.4) blur(14px);
+    border-bottom: 1px solid var(--line); }
+  .bar-in { max-width: 1120px; margin: 0 auto; height: 60px; padding: 0 20px; display: flex; align-items: center; gap: 22px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; text-decoration: none; font-size: 17px; }
+  .brand img { width: 28px; height: 28px; }
+  .day { color: var(--soft); font-size: 15px; }
+  .bar nav { margin-left: auto; display: flex; gap: 22px; font-size: 15px; }
+  .bar nav a { text-decoration: none; color: var(--soft); }
+  .bar nav a:hover { color: var(--ink); }
+  .btn { display: inline-flex; align-items: center; gap: 9px; height: 46px; padding: 0 22px; border-radius: 23px; border: 0;
+    background: var(--ink); color: var(--paper); font: 600 16px/1 inherit; text-decoration: none; cursor: pointer;
+    transition: transform .16s var(--ease), background .2s; }
+  .btn:hover { background: #2a2d32; }
+  .btn:active { transform: scale(.97); }
+  .btn svg { width: 18px; height: 18px; }
+  .btn.sm { height: 36px; padding: 0 16px; font-size: 14px; }
+  .btn.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px rgba(22,24,27,.22); }
+  .btn.ghost:hover { background: rgba(22,24,27,.05); }
+
+  /* The day */
+  .dayview { position: relative; max-width: 1120px; margin: 0 auto; padding: 34px 20px 40px; }
+  .slot { display: grid; grid-template-columns: var(--gutter) minmax(0,1fr); position: relative; }
+  .slot > .h { position: relative; color: #50565e; font-size: 13px; font-weight: 500; padding-top: 2px; }
+  .slot > .h span { position: relative; top: -10px; }
+  .slot > .c { border-top: 1px solid var(--line); padding: 6px 0 6px; min-height: calc(var(--hour) / 2); }
+  .slot.half > .c { border-top-style: dashed; border-top-color: rgba(22,24,27,.06); }
+
+  .ev { border-radius: 10px; padding: 14px 18px; position: relative; }
+  .ev .t { font-size: 13px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; }
+  .ev .t .num { font-weight: 500; }
+  .meet { background: var(--mist); color: var(--ink); }
+  .meet .t { color: var(--mist-ink); }
+  .gap { background: var(--signal); color: var(--ink); }
+  .gap .t { color: #2a0f04; }
+  .gap.open { background: transparent; box-shadow: inset 0 0 0 2px var(--signal); }
+  .gap.open .t { color: #a33208; }
+
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+  h1 { font-size: clamp(44px, 8.2vw, 96px); line-height: .96; }
+  h2 { font-size: clamp(30px, 4.4vw, 52px); line-height: 1.02; }
+  h3 { font-size: 20px; letter-spacing: -0.01em; }
+  p { margin: 0; max-width: 62ch; }
+  .lede { font-size: clamp(18px, 2vw, 21px); color: #2b2f35; }
+  .muted { color: var(--soft); }
+
+  /* Hero */
+  .hero-meet { display: grid; gap: 4px; }
+  .hero-meet .meet { padding: 10px 18px; }
+  .hero-head { padding: 26px 4px 22px; }
+  .hero-head p { margin-top: 18px; }
+  .gap-hero { padding: 26px 28px 28px; }
+  .gap-hero h2 { margin-top: 8px; }
+  .gap-hero .row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; margin-top: 22px; }
+  .fine { font-size: 14px; color: #3a1607; }
+
+  /* Now line */
+  .now { position: absolute; left: 20px; right: 20px; height: 0; z-index: 5; pointer-events: none; }
+  .now::before { content: ""; position: absolute; left: calc(var(--gutter) - 6px); top: -5px; width: 10px; height: 10px; border-radius: 50%; background: var(--signal); }
+  .now::after { content: ""; position: absolute; left: var(--gutter); right: 0; top: -1px; height: 2px; background: var(--signal); }
+  .now b { position: absolute; left: 0; top: -11px; font-size: 12px; font-weight: 700; color: var(--ink); background: var(--signal); border-radius: 6px; padding: 3px 8px; line-height: 1.2; }
+  .now.track { position: fixed; left: 0; right: 0; top: 50vh; max-width: 1120px; margin: 0 auto; padding: 0 20px; opacity: 0; transition: opacity .3s; }
+  .now.track.on { opacity: 1; }
+  .now.track::after { right: auto; width: 26px; }
+
+  /* Sections inside events */
+  .ev-body { display: grid; gap: 28px; padding: 18px 6px 10px; }
+  .split { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 40px; align-items: center; }
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 26px; }
+  .steps div p { margin-top: 6px; font-size: 16px; color: #2b2f35; }
+  .steps svg { width: 26px; height: 26px; margin-bottom: 10px; color: var(--ink); }
+
+  /* Island, rebuilt from the app */
+  .stage { background: #e9ebee; border-radius: 14px; height: 300px; position: relative; overflow: hidden; }
+  .stage .mb { background: rgba(255,255,255,.7); display: flex; align-items: center; padding: 6px 12px; gap: 14px; font-size: 12px; font-weight: 600; color: #333; }
+  .stage .mb .r { margin-left: auto; display: flex; gap: 12px; align-items: center; font-weight: 500; }
+  .island { position: absolute; left: 50%; top: 0; transform: translateX(-50%); background: #000; color: #fff;
+    border-radius: 0 0 22px 22px; width: 340px; padding: 30px 20px 14px; box-shadow: 0 10px 26px rgba(0,0,0,.28);
+    transition: width .45s var(--ease), padding .45s var(--ease); font-variant-numeric: tabular-nums; }
+  .island .r1 { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; white-space: nowrap; }
+  .island .r1 .dim { color: rgba(255,255,255,.55); font-weight: 500; }
+  .island .ring { margin-left: auto; width: 18px; height: 18px; }
+  .island .r2 { margin-top: 10px; font-size: 14px; color: rgba(255,255,255,.62); }
+  .island .r3 { margin-top: 12px; display: flex; gap: 6px; align-items: center; }
+  .pill { height: 30px; padding: 0 15px; border-radius: 15px; border: 0; font: 600 13px/1 inherit; cursor: pointer; transition: transform .15s var(--ease); }
+  .pill:active { transform: scale(.96); }
+  .pill.go { background: var(--signal); color: var(--ink); }
+  .pill.later { background: #2b2b2b; color: #d9d9d9; }
+  .island .x { margin-left: auto; color: rgba(255,255,255,.45); background: none; border: 0; font-size: 14px; cursor: pointer; width: 26px; height: 26px; }
+  .island.walking .r2, .island.walking .r3, .island.walking .ring { display: none; }
+  .island.walking .r1 .lbl { color: var(--signal); }
+  .stage .cap { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; font-size: 13px; color: #454a52; }
+
+  /* Panel, rebuilt from the app */
+  .panel { background: #fff; border-radius: 18px; padding: 18px; box-shadow: 0 1px 0 rgba(0,0,0,.04), 0 18px 40px rgba(22,24,27,.12); font-size: 13px; max-width: 380px; margin-left: auto; }
+  .panel .top { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .panel .top img { width: 20px; height: 20px; }
+  .panel .top span { margin-left: auto; color: var(--soft); font-weight: 400; font-size: 12px; }
+  .panel .big { display: flex; align-items: baseline; margin-top: 16px; }
+  .panel .big b { font-size: 54px; font-weight: 600; letter-spacing: -2px; line-height: 1; }
+  .panel .big .free { margin-left: auto; text-align: right; }
+  .panel .big .free strong { display: block; font-size: 21px; font-weight: 600; }
+  .panel .sub { display: flex; margin-top: 4px; color: var(--soft); }
+  .panel .sub .warn { margin-left: auto; color: #c23d0b; font-weight: 600; }
+  .strip { display: flex; gap: 3px; height: 28px; margin-top: 20px; }
+  .strip i { border-radius: 6px; background: var(--mist); }
+  .strip i.g { background: var(--signal); }
+  .strip i.o { background: transparent; box-shadow: inset 0 0 0 2px var(--signal); }
+  .hours { display: flex; justify-content: space-between; color: var(--soft); font-size: 11px; margin-top: 6px; }
+  .panel .gl { margin-top: 12px; font-weight: 600; font-size: 14px; }
+  .panel hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+  .cups { display: flex; gap: 6px; margin-top: 8px; }
+
+  /* Water cups, interactive */
+  .cup { width: 22px; height: 28px; border: 2px solid var(--water); border-top: 0; border-radius: 0 0 6px 6px; background: none; padding: 0; position: relative; overflow: hidden; cursor: pointer; }
+  .cup::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--water); transition: height .25s var(--ease); }
+  .cup.full::after { height: 100%; }
+
+  /* Every Mac */
+  .macs { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 18px; }
+  .phone { width: 120px; height: 200px; border-radius: 24px; background: var(--ink); color: #fff; padding: 22px 12px; display: grid; align-content: start; gap: 8px; }
+  .phone .tile { background: #2a2d31; border-radius: 12px; padding: 10px; font-size: 13px; font-weight: 600; }
+  .phone small { color: #9aa0a8; font-size: 11px; text-align: center; }
+  .wire { height: 0; border-top: 2px dashed rgba(22,24,27,.35); }
+  .mac { border-top: 1px solid var(--line); padding: 10px 0 4px; min-width: 170px; }
+  .mac + .mac { margin-top: 6px; }
+  .mac small { color: var(--soft); font-size: 12px; }
+  .mac b { display: block; font-size: 30px; font-weight: 600; letter-spacing: -1px; }
+
+  /* Goals */
+  .goals { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
+  .goal { border-top: 1px solid rgba(42,15,4,.28); padding: 16px 0 0; }
+  .goal .row { display: flex; align-items: center; gap: 10px; }
+  .goal .row .lab { color: #3a1607; }
+  .stepper { margin-left: auto; display: inline-flex; border-radius: 16px; background: rgba(22,24,27,.08); }
+  .stepper button { width: 38px; height: 32px; border: 0; background: none; font: 600 18px/1 inherit; cursor: pointer; color: var(--ink); }
+  .stepper button:active { transform: scale(.92); }
+  .goal .v { font-size: 46px; font-weight: 650; letter-spacing: -1.5px; line-height: 1; margin-top: 14px; }
+  .goal .walk { margin-top: 8px; font-size: 15px; color: #3a1607; }
+
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 22px 40px; }
+  .grid2 h3 { margin-bottom: 4px; }
+  .grid2 p { font-size: 16px; color: #2b2f35; }
+
+  .install { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); gap: 36px; align-items: start; }
+  ol.how { margin: 14px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+  pre { margin: 10px 0 0; background: var(--ink); color: #e9ebee; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font: 13px/1.6 ui-monospace, "SF Mono", Menlo, monospace; }
+
+  video, .poster { width: 100%; border-radius: 12px; display: block; background: #000; }
+  footer { border-top: 1px solid var(--line); }
+  .foot { max-width: 1120px; margin: 0 auto; padding: 26px 20px 40px; display: flex; flex-wrap: wrap; gap: 10px 24px; font-size: 14px; color: var(--soft); }
+  .foot a { color: var(--soft); }
+
+  @media (max-width: 860px) {
+    :root { --gutter: 44px; }
+    .bar nav { display: none; }
+    .split, .install, .goals, .grid2 { grid-template-columns: minmax(0,1fr); gap: 22px; }
+    .steps { grid-template-columns: minmax(0,1fr); gap: 18px; }
+    .panel { margin: 0 auto; }
+    .macs { grid-template-columns: minmax(0,1fr); justify-items: center; }
+    .wire { width: 0; height: 30px; border-top: 0; border-left: 2px dashed rgba(22,24,27,.35); }
+    .island { width: 300px; }
+    .day { display: none; }
+    .bar .btn.sm { margin-left: auto; }
+  }
+
+  /* Opening: the day books itself, then the island drops from the top of the screen */
+  .topisland { position: fixed; top: 0; left: 50%; z-index: 40; transform: translate(-50%, -110%);
+    width: 320px; padding: 14px 20px 12px; border-radius: 0 0 24px 24px; }
+  .topisland.shown { transform: translate(-50%, 0); }
+  .topisland .r2, .topisland .r3 { display: none; }
+  .topisland.open { width: 380px; }
+  .topisland.open .r2, .topisland.open .r3 { display: flex; }
+  .topisland.open .r2 { display: block; }
+  .topisland.walking .r2, .topisland.walking .r3 { display: none; }
+  .gap-hero { transition: background-color .5s var(--ease); }
+  .now.hero-now::after { transform-origin: left center; }
+  html.armed .reveal { clip-path: inset(0 100% 0 0 round 10px); }
+  html.armed .reveal.in { clip-path: inset(0 0 0 0 round 10px); transition: clip-path .7s var(--ease); }
+  html.armed .rise { opacity: 0; transform: translateY(16px); }
+  html.armed .rise.in { opacity: 1; transform: none; transition: opacity .6s var(--ease), transform .6s var(--ease); }
+  @media (max-width: 860px) { .topisland { width: 290px; } .topisland.open { width: 340px; } }
+  @media (prefers-reduced-motion: reduce) { html.armed .reveal, html.armed .rise { clip-path: none; opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-in">
+    <a class="brand" href="#top"><img src="icon.png" alt="">Unsit</a>
+    <span class="day num">Monday · your day, 09:00 to 17:00</span>
+    <nav aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#goals">Your goals</a>
+      <a href="#private">Privacy</a>
+      <a href="https://github.com/jorgesousa/Unsit">GitHub</a>
+    </nav>
+    <a class="btn sm" href="https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg">Download</a>
+  </div>
+</header>
+
+
+<div class="island topisland" id="topisland" role="status" aria-label="Unsit nudge, a demo of what appears on your Mac">
+  <div class="r1"><svg width="15" height="17" viewBox="0 0 15 17" aria-hidden="true"><circle cx="8" cy="2" r="1.8" fill="currentColor"/><path d="M7.8 4.5 7 9.6M7 9.6 5 15M7 9.6l2.4 5M7.6 5.4 4.6 8M7.6 5.4l3 2.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
+    <span class="lbl" id="t-label">Walk 15 min</span><span class="dim" id="t-dim">· until 11:30</span>
+    <svg class="ring" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="7.5" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3"/><circle cx="9" cy="9" r="7.5" fill="none" stroke="#FF5A1F" stroke-width="3" stroke-linecap="round" stroke-dasharray="44 48" transform="rotate(-90 9 9)"/></svg></div>
+  <div class="r2 num">You’re 1,240 behind pace.</div>
+  <div class="r3"><button class="pill go" id="t-going">Going</button><button class="pill later" id="t-later">In 10 min</button><button class="x" aria-label="Not this gap" id="t-skip">✕</button></div>
+</div>
+<main class="dayview" id="top">
+  <div class="now track" id="track" aria-hidden="true"><b class="num" id="clock">09:00</b></div>
+
+  <!-- 09:00 – 11:00 -->
+  <section class="slot" aria-label="The morning">
+    <div class="h num"><span>09</span></div>
+    <div class="c">
+      <div class="hero-meet">
+        <div class="ev meet op"><div class="t">Standup <span class="num">09:00–09:30</span></div></div>
+        <div class="ev meet op"><div class="t">Planning <span class="num">09:30–10:30</span></div></div>
+      </div>
+      <div class="hero-head" id="hero-head">
+        <h1 class="display">Back to back since&nbsp;9.</h1>
+        <p class="lede">Unsit is a Mac menu bar app that syncs with your calendar, finds the gaps between your meetings and tells you when to walk, so you reach your step and water goals on the busiest day.</p>
+      </div>
+    </div>
+  </section>
+  <section class="slot" aria-hidden="true">
+    <div class="h num"><span>10</span></div>
+    <div class="c"><div class="ev meet op"><div class="t">1:1 <span class="num">10:30–11:00</span></div></div></div>
+  </section>
+
+  <!-- 11:00 gap: the action -->
+  <section class="slot" aria-labelledby="gap1">
+    <div class="h num"><span>11</span></div>
+    <div class="c" style="position:relative">
+      <div class="now hero-now" id="hero-now" style="top:0" aria-hidden="true"><b class="num" id="hero-clock">11:00</b></div>
+      <div class="ev gap gap-hero" id="gap-hero">
+        <div class="t">Free <span class="num">11:00–11:30</span></div>
+        <h2 class="display" id="gap1">Walk 15 min now.</h2>
+        <p class="lede" style="color:#2a0f04">Until 11:30, before Design review. That’s 1,500 steps, and you’re back on pace.</p>
+        <div class="row">
+          <a class="btn" href="https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+            Download for Mac</a>
+          <span class="fine">Free · macOS 14 or later · signed and notarized by Apple</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11:30 Design review: how it works -->
+  <section class="slot" id="how" aria-labelledby="how-h">
+    <div class="h num"><span></span></div>
+    <div class="c">
+      <div class="ev meet reveal"><div class="t">Design review <span class="num">11:30–12:30</span></div></div>
+      <div class="ev-body rise">
+        <h2 class="display" id="how-h">It reads your day the way you would, if you had time to plan it.</h2>
+        <div class="steps">
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+            <h3>Your calendar, synced</h3>
+            <p>Every calendar on your Mac counts: iCloud, Google, Microsoft 365, Exchange. New or moved meetings show up within 5 minutes.</p>
+          </div>
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="3"/><path d="M11 18h2"/></svg>
+            <h3>Steps from your iPhone</h3>
+            <p>A free Apple shortcut sends today’s steps from Apple Health. Apple Watch steps count too. No typing.</p>
+          </div>
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13" cy="4" r="2"/><path d="M12 7l-2 6 3 3v5M10 13l-3 2M12 9l4 3M10 18l-3 3"/></svg>
+            <h3>A nudge at the right moment</h3>
+            <p>When a gap opens and you’re more than 300 steps behind pace, a small island grows out of the notch.</p>
+          </div>
+        </div>
+        <div class="split">
+          <div class="stage" id="stage">
+            <div class="mb"><span>Calendar</span><span style="font-weight:400">File</span><span style="font-weight:400">Edit</span>
+              <span class="r num"><span>4,200</span><span>Mon 11:00</span></span></div>
+            <div class="island" id="island" role="group" aria-label="Unsit nudge">
+              <div class="r1"><svg width="15" height="17" viewBox="0 0 15 17" aria-hidden="true"><circle cx="8" cy="2" r="1.8" fill="currentColor"/><path d="M7.8 4.5 7 9.6M7 9.6 5 15M7 9.6l2.4 5M7.6 5.4 4.6 8M7.6 5.4l3 2.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
+                <span class="lbl" id="isl-label">Walk 15 min</span><span class="dim" id="isl-dim">· until 11:30</span>
+                <svg class="ring" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="7.5" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3"/><circle cx="9" cy="9" r="7.5" fill="none" stroke="#FF5A1F" stroke-width="3" stroke-linecap="round" stroke-dasharray="44 48" transform="rotate(-90 9 9)"/></svg></div>
+              <div class="r2 num">You’re 1,240 behind pace.</div>
+              <div class="r3"><button class="pill go" id="going">Going</button><button class="pill later" id="later">In 10 min</button><button class="x" aria-label="Not this gap" id="skip">✕</button></div>
+            </div>
+            <div class="cap" id="stage-cap">Try it: press Going.</div>
+          </div>
+          <div>
+            <a href="unsit.mp4" aria-label="Watch the 24-second video, with sound"><img class="poster" src="poster.jpg" alt="Unsit demo: the island nudge, the menu bar panel, steps on every Mac and your goals"></a>
+            <p class="muted" style="margin-top:10px;font-size:15px">Watch the 24-second video, with sound. The day, meetings and numbers in it are made up.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 12:30 gap: every Mac -->
+  <section class="slot" aria-labelledby="macs-h">
+    <div class="h num"><span>12</span></div>
+    <div class="c">
+      <div class="ev gap open reveal">
+        <div class="t">Free <span class="num">12:30–13:30</span></div>
+        <div class="ev-body rise" style="padding-bottom:4px">
+          <div class="split">
+            <div>
+              <h2 class="display" id="macs-h">Your steps, on every Mac you use.</h2>
+              <p class="lede" style="margin-top:14px">Home Mac, work laptop, both at once. Your iPhone sends today’s steps to a private code, and every Mac with that code shows them. The work laptop doesn’t need your iCloud.</p>
+            </div>
+            <div class="macs" aria-label="An iPhone sending steps to two Macs">
+              <div class="phone"><div class="tile">Unsit Sync</div><small class="num">Sent 6,120 steps</small></div>
+              <div class="wire"></div>
+              <div><div class="mac"><small>Home Mac</small><b class="num count" data-from="4980" data-to="6120">6,120</b></div><div class="mac"><small>Work Mac</small><b class="num count" data-from="4980" data-to="6120">6,120</b></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 13:30 Sync: the panel -->
+  <section class="slot" aria-labelledby="panel-h">
+    <div class="h num"><span>13</span></div>
+    <div class="c">
+      <div class="ev meet reveal"><div class="t">Sync <span class="num">13:30–14:30</span></div></div>
+      <div class="ev-body rise">
+        <div class="split">
+          <div>
+            <h2 class="display" id="panel-h">Your whole day, one click away.</h2>
+            <p class="lede" style="margin-top:14px">Click the walking figure in the menu bar: steps against your goal, how much of today is still free of meetings, every gap on one strip, and how long to walk and when.</p>
+          </div>
+          <div class="panel" aria-label="The Unsit menu bar panel">
+            <div class="top"><img src="icon.png" alt="">Unsit<span class="num">Today 09:00 to 17:00</span></div>
+            <div class="big"><b class="num count" data-from="4200" data-to="4980">4,980</b><span class="free"><strong class="num">2 h 30 min</strong><span class="muted">free of meetings today</span></span></div>
+            <div class="sub"><span class="num">of 10,000 steps</span><span class="warn num">1,240 behind pace</span></div>
+            <div class="strip" aria-hidden="true"><i style="flex:2"></i><i style="flex:4"></i><i style="flex:2"></i><i class="g" style="flex:2"></i><i style="flex:4"></i><i class="o" style="flex:4"></i><i style="flex:4"></i><i class="o" style="flex:2"></i><i style="flex:4"></i><i class="o" style="flex:2"></i><i style="flex:2"></i></div>
+            <div class="hours num"><span>09</span><span>11</span><span>13</span><span>15</span><span>17</span></div>
+            <div class="gl">Walk 15 min now</div>
+            <div class="muted">Until 11:30, before Design review.</div>
+            <hr>
+            <div style="display:flex"><span class="muted">Water</span><span style="margin-left:auto" class="num"><b>0.75 l</b> <span class="muted">of 2 l</span></span></div>
+            <div class="cups" id="panel-cups"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 14:30 gap: your goals -->
+  <section class="slot" id="goals" aria-labelledby="goals-h">
+    <div class="h num"><span>14</span></div>
+    <div class="c">
+      <div class="ev gap reveal">
+        <div class="t">Free <span class="num">14:30–15:00</span></div>
+        <div class="ev-body rise" style="padding-bottom:4px">
+          <h2 class="display" id="goals-h">Your goals, not ours.</h2>
+          <div class="goals">
+            <div class="goal">
+              <div class="row"><span class="lab">Daily steps</span>
+                <span class="stepper"><button id="s-minus" aria-label="Lower the step goal">−</button><button id="s-plus" aria-label="Raise the step goal">+</button></span></div>
+              <div class="v num" id="s-goal">10,000</div>
+              <div class="walk num" id="s-walk">About 1 h 40 min of walking, fitted into your gaps.</div>
+            </div>
+            <div class="goal">
+              <div class="row"><span class="lab">Water</span><span class="lab num" style="margin-left:auto" id="w-text">0.75 l of 2 l</span></div>
+              <div class="cups" id="goal-cups" style="margin-top:22px"></div>
+              <div class="walk">Tap a glass to fill up to it. Tap the last full one to take it back.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 15:00 Roadmap: polite and private -->
+  <section class="slot" id="private" aria-labelledby="polite-h">
+    <div class="h num"><span>15</span></div>
+    <div class="c">
+      <div class="ev meet reveal"><div class="t">Roadmap <span class="num">15:00–16:00</span></div></div>
+      <div class="ev-body rise">
+        <h2 class="display" id="polite-h">Polite, and private.</h2>
+        <div class="grid2">
+          <div><h3>Quiet when it should be</h3><p>No nudges during a meeting, when you’re away from the Mac, outside your workday, or once you’ve reached your goal. Pause it for an hour, two, or the rest of the day.</p></div>
+          <div><h3>Your calendar stays on your Mac</h3><p>Meetings are read on this Mac and never leave it. Only the step count and the time pass through ntfy.sh, on a channel named after your private code.</p></div>
+          <div><h3>Free, and open to read</h3><p>Free to download and use, with the source on GitHub under the Sustainable Use License.</p></div>
+          <div><h3>Updates itself</h3><p>When a new version is out, one click downloads it, checks it’s signed by its author and reopens.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 16:00 gap: install -->
+  <section class="slot" id="install" aria-labelledby="install-h">
+    <div class="h num"><span>16</span></div>
+    <div class="c">
+      <div class="ev gap open reveal">
+        <div class="t">Free <span class="num">16:00–16:30</span></div>
+        <div class="ev-body rise" style="padding-bottom:4px">
+          <div class="install">
+            <div>
+              <h2 class="display" id="install-h">Five minutes, then it runs on its own.</h2>
+              <ol class="how">
+                <li>Download Unsit.dmg and drag Unsit to Applications.</li>
+                <li>Add the Unsit Sync shortcut on your iPhone and run it once.</li>
+                <li>Allow your calendar and set your workday.</li>
+              </ol>
+              <p class="muted" style="margin-top:12px;font-size:15px">You need macOS 14 or later and an iPhone with Apple Health. Android is coming.</p>
+            </div>
+            <div>
+              <a class="btn" href="https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+                Download for Mac</a>
+              <p class="muted" style="margin-top:18px;font-size:15px">Prefer to build it yourself?</p>
+              <pre>git clone https://github.com/jorgesousa/Unsit
+cd Unsit
+scripts/build-app.sh --open</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slot" aria-label="End of the day">
+    <div class="h num"><span>17</span></div>
+    <div class="c">
+      <div class="ev meet reveal"><div class="t">Wrap-up <span class="num">16:30–17:00</span></div></div>
+      <div class="ev-body rise" style="text-align:left">
+        <h2 class="display">Your chair can wait.</h2>
+        <div><a class="btn" href="https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+          Download for Mac</a></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="foot">
+    <span>Unsit, by <a href="https://github.com/jorgesousa">Jorge Sousa</a></span>
+    <a href="https://github.com/jorgesousa/Unsit">Source on GitHub</a>
+    <a href="https://github.com/jorgesousa/Unsit/releases">Releases</a>
+    <a href="https://github.com/jorgesousa/Unsit/blob/main/LICENSE.md">Sustainable Use License</a>
+  </div>
+</footer>
+
+<script>
+  const fmt = n => n.toLocaleString('en-US');
+
+  // Water: tap a glass to fill up to it, tap the last full one to take it back.
+  let glasses = 3; const goalGlasses = 8;
+  function renderCups() {
+    for (const id of ['panel-cups', 'goal-cups']) {
+      const box = document.getElementById(id); box.innerHTML = '';
+      for (let i = 0; i < goalGlasses; i++) {
+        const b = document.createElement('button');
+        b.className = 'cup' + (i < glasses ? ' full' : '');
+        b.setAttribute('aria-label', `Glass ${i + 1} of ${goalGlasses}${i < glasses ? ', full' : ''}`);
+        b.onclick = () => { glasses = (i + 1 === glasses) ? i : i + 1; renderCups(); };
+        box.appendChild(b);
+      }
+    }
+    document.getElementById('w-text').textContent = `${(glasses * 0.25).toFixed(2)} l of 2 l`;
+  }
+  renderCups();
+
+  // Steps goal: walking time at 100 steps a minute.
+  let goal = 10000;
+  function renderGoal() {
+    document.getElementById('s-goal').textContent = fmt(goal);
+    const m = Math.round(Math.max(0, goal - 4000) / 100), h = Math.floor(m / 60);
+    document.getElementById('s-walk').textContent = `About ${h ? h + ' h ' : ''}${m % 60} min of walking, fitted into your gaps.`;
+  }
+  document.getElementById('s-minus').onclick = () => { goal = Math.max(4000, goal - 1000); renderGoal(); };
+  document.getElementById('s-plus').onclick = () => { goal = Math.min(20000, goal + 1000); renderGoal(); };
+
+  // The island: Going turns it into a walk timer.
+  const island = document.getElementById('island'), cap = document.getElementById('stage-cap');
+  let timer;
+  document.getElementById('going').onclick = () => {
+    island.classList.add('walking'); clearInterval(timer);
+    let s = 15 * 60; const lab = document.getElementById('isl-label'); document.getElementById('isl-dim').textContent = '';
+    const tick = () => { lab.textContent = `Walking · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; s--; };
+    tick(); timer = setInterval(tick, 1000);
+    cap.textContent = 'It folds away for the rest of the gap.';
+  };
+  document.getElementById('later').onclick = () => { cap.textContent = 'It asks again in 10 minutes.'; };
+  document.getElementById('skip').onclick = () => { cap.textContent = 'Skipped. It waits for the next gap.'; };
+
+
+  // Opening: the morning books itself, the clock runs to 11:00, the gap opens, the island drops.
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const ease = 'cubic-bezier(0.23, 1, 0.32, 1)';
+  const isl = document.getElementById('topisland');
+  function dropIsland() {
+    isl.classList.add('shown');
+    isl.animate([{ transform: 'translate(-50%, -110%)' }, { transform: 'translate(-50%, 6px)', offset: .7 }, { transform: 'translate(-50%, 0)' }],
+      { duration: calm ? 0 : 650, easing: ease, fill: 'forwards' }).finished.then(() => isl.classList.add('shown'));
+    setTimeout(() => { if (!isl.matches(':hover') && !isl.classList.contains('walking')) isl.classList.add('open'); }, calm ? 0 : 700);
+    setTimeout(() => { if (!isl.matches(':hover')) isl.classList.remove('open'); }, 7000);
+  }
+  if (!calm) {
+    [...document.querySelectorAll('.op')].forEach((el, i) => el.animate(
+      [{ transform: 'translateY(-22px) scale(.97)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+      { duration: 480, delay: 40 + i * 190, easing: ease, fill: 'backwards' }));
+    document.getElementById('hero-head').animate([{ transform: 'translateY(14px)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+      { duration: 650, delay: 120, easing: ease, fill: 'backwards' });
+    const hc = document.getElementById('hero-clock'), t0 = performance.now() + 650;
+    hc.textContent = '09:00';
+    const run = now => { const k = Math.min(1, Math.max(0, (now - t0) / 650)); const m = Math.round(k * 120 / 5) * 5;
+      hc.textContent = `${String(9 + Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; if (k < 1) requestAnimationFrame(run); };
+    requestAnimationFrame(run);
+    document.getElementById('hero-now').animate([{ opacity: 0, transform: 'scaleX(.2)' }, { opacity: 1, transform: 'none' }],
+      { duration: 600, delay: 650, easing: ease, fill: 'backwards' });
+    const gap = document.getElementById('gap-hero');
+    gap.animate([{ backgroundColor: 'rgba(255,90,31,0)', boxShadow: 'inset 0 0 0 2px #FF5A1F' }, { backgroundColor: '#FF5A1F', boxShadow: 'inset 0 0 0 2px #FF5A1F' }],
+      { duration: 480, delay: 1200, easing: ease, fill: 'backwards' });
+    [...gap.children].forEach((el, i) => el.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 480, delay: 1320 + i * 80, easing: ease, fill: 'backwards' }));
+    setTimeout(dropIsland, 1700);
+    // Never leave content hidden if the animations can't run (background tab, throttled timers).
+    setTimeout(() => document.querySelectorAll('.op, #hero-head, #hero-now, #gap-hero, #gap-hero > *').forEach(el => el.getAnimations().forEach(a => a.finish())), 2600);
+  } else dropIsland();
+
+  isl.addEventListener('mouseenter', () => { if (!isl.classList.contains('walking')) isl.classList.add('open'); });
+  isl.addEventListener('mouseleave', () => isl.classList.remove('open'));
+  isl.addEventListener('click', e => { if (!e.target.closest('button') && !isl.classList.contains('walking')) isl.classList.toggle('open'); });
+  const hideTop = () => isl.animate([{ transform: 'translate(-50%, 0)' }, { transform: 'translate(-50%, -110%)' }],
+    { duration: 380, easing: ease, fill: 'forwards' });
+  let tTimer;
+  document.getElementById('t-going').onclick = () => {
+    isl.classList.remove('open'); isl.classList.add('walking'); document.getElementById('t-dim').textContent = '';
+    let sec = 900; const lab = document.getElementById('t-label');
+    const tick = () => { lab.textContent = `Walking · ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; sec--; };
+    tick(); tTimer = setInterval(tick, 1000); setTimeout(hideTop, 4000);
+  };
+  document.getElementById('t-later').onclick = hideTop;
+  document.getElementById('t-skip').onclick = hideTop;
+  let gone = false;
+  addEventListener('scroll', () => { if (!gone && scrollY > innerHeight * .75 && isl.classList.contains('shown')) { gone = true; isl.classList.remove('open'); hideTop(); } }, { passive: true });
+  let sy = null;
+  isl.addEventListener('touchstart', e => { sy = e.touches[0].clientY; }, { passive: true });
+  isl.addEventListener('touchend', e => { if (sy !== null && e.changedTouches[0].clientY - sy < -20) hideTop(); sy = null; });
+
+  // Scroll: each event is booked into the day as it arrives; its contents rise after it.
+  document.documentElement.classList.add('armed');
+  const io = new IntersectionObserver(entries => entries.forEach(e => {
+    if (!e.isIntersecting) return; e.target.classList.add('in'); io.unobserve(e.target);
+    e.target.querySelectorAll('.count').forEach(countUp);
+  }), { rootMargin: '0px 0px -12% 0px' });
+  document.querySelectorAll('.reveal, .rise').forEach(el => io.observe(el));
+  function countUp(el) {
+    if (calm) return; const end = +el.dataset.to, start = +el.dataset.from, t0 = performance.now();
+    const step = now => { const k = Math.min(1, (now - t0) / 1100), v = start + (end - start) * (1 - Math.pow(1 - k, 3));
+      el.textContent = fmt(Math.round(v / 10) * 10); if (k < 1) requestAnimationFrame(step); else el.textContent = fmt(end); };
+    requestAnimationFrame(step);
+  }
+
+  // The now line follows your scroll through the day.
+  const track = document.getElementById('track'), clock = document.getElementById('clock');
+  const slots = [...document.querySelectorAll('.slot .h span')].map(s => [s.closest('.slot'), parseInt(s.textContent)]).filter(x => !isNaN(x[1]));
+  function onScroll() {
+    const y = window.innerHeight / 2;
+    let t = 9;
+    for (let i = 0; i < slots.length; i++) {
+      const r = slots[i][0].getBoundingClientRect();
+      const next = slots[i + 1];
+      const end = next ? next[0].getBoundingClientRect().top : r.bottom;
+      if (y >= r.top && y < end) { t = slots[i][1] + (next ? (next[1] - slots[i][1]) : 1) * (y - r.top) / Math.max(1, end - r.top); break; }
+      if (y >= end) t = next ? next[1] : 17;
+    }
+    t = Math.min(17, Math.max(9, t));
+    const h = Math.floor(t), m = Math.floor((t - h) * 60 / 5) * 5;
+    clock.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    track.classList.toggle('on', window.scrollY > 300);
+  }
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+</script>
+</body>
+</html>

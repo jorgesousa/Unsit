@@ -8,7 +8,8 @@
 
 A macOS menu bar app that gets you to 10,000 steps and enough water during the workday. It reads your calendar, finds the gaps between meetings, and tells you when to walk. Your steps arrive from your iPhone and Apple Watch on their own.
 
-[![Version 0.6.0](https://img.shields.io/badge/version-0.6.0-2F7DF6)](Resources/Info.plist)
+[![Version 0.6.1](https://img.shields.io/badge/version-0.6.1-2F7DF6)](Resources/Info.plist)
+[![Website](https://img.shields.io/badge/website-jorgesousa.github.io%2FUnsit-16181B)](https://jorgesousa.github.io/Unsit/)
 [![Download](https://img.shields.io/github/v/release/jorgesousa/Unsit?label=download&color=FF5A1F)](https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg)
 [![License: Sustainable Use 1.0](https://img.shields.io/badge/license-Sustainable%20Use%201.0-8B5CF6)](LICENSE.md)
 [![Build](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml/badge.svg)](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml)
@@ -26,6 +27,8 @@ A macOS menu bar app that gets you to 10,000 steps and enough water during the w
 ## Install
 
 You need **macOS 14 or later** and an **iPhone with Apple Health**. The Mac doesn't need your iCloud account, so a work laptop is fine. Android phones are coming soon.
+
+More on the website: **[jorgesousa.github.io/Unsit](https://jorgesousa.github.io/Unsit/)**.
 
 **[⬇ Download Unsit.dmg](https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg)**, open it and drag **Unsit** to **Applications**. It's signed with Developer ID and notarized by Apple, so it opens with a double-click. A setup window then walks you through connecting your iPhone and your calendar, in about five minutes.
 
