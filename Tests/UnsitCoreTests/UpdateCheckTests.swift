@@ -36,6 +36,22 @@ final class UpdateCheckTests: XCTestCase {
         XCTAssertNil(UpdateCheck.latest(fromReleaseJSON: Data("not json".utf8)))
     }
 
+    func testFindsTheAppZipInTheRelease() throws {
+        let json = """
+            {"tag_name":"v0.6.0","html_url":"https://github.com/jorgesousa/Unsit/releases/tag/v0.6.0","assets":[
+              {"name":"Unsit.dmg","browser_download_url":"https://github.com/jorgesousa/Unsit/releases/download/v0.6.0/Unsit.dmg"},
+              {"name":"Unsit.zip","browser_download_url":"https://github.com/jorgesousa/Unsit/releases/download/v0.6.0/Unsit.zip"}]}
+            """
+        let latest = try XCTUnwrap(UpdateCheck.latest(fromReleaseJSON: Data(json.utf8)))
+        XCTAssertEqual(latest.appZip?.absoluteString, "https://github.com/jorgesousa/Unsit/releases/download/v0.6.0/Unsit.zip")
+
+        let noZip = #"{"tag_name":"v0.6.0","assets":[{"name":"Unsit.dmg","browser_download_url":"https://x/Unsit.dmg"}]}"#
+        XCTAssertNil(try XCTUnwrap(UpdateCheck.latest(fromReleaseJSON: Data(noZip.utf8))).appZip,
+                     "without a zip, the app can't install the update itself")
+        let noAssets = #"{"tag_name":"v0.6.0"}"#
+        XCTAssertNil(try XCTUnwrap(UpdateCheck.latest(fromReleaseJSON: Data(noAssets.utf8))).appZip)
+    }
+
     func testReadsTheVersionFromAnInfoPlist() {
         let plist = """
             <?xml version="1.0" encoding="UTF-8"?>

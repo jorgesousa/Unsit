@@ -3,16 +3,22 @@ import Foundation
 /// Decides whether GitHub has a newer Unsit than the one running.
 /// Parsing and comparison only, no networking, so it's unit tested.
 public enum UpdateCheck {
-    /// The newest published version and the page that describes it.
+    /// The newest published version, the page that describes it and, for a release,
+    /// the signed `Unsit.zip` the app can download and install itself.
     public struct Latest: Hashable, Sendable {
         public var version: String
         public var url: URL?
+        public var appZip: URL?
 
-        public init(version: String, url: URL? = nil) {
+        public init(version: String, url: URL? = nil, appZip: URL? = nil) {
             self.version = version
             self.url = url
+            self.appZip = appZip
         }
     }
+
+    /// The release asset the app installs from.
+    public static let appZipName = "Unsit.zip"
 
     /// True when `candidate` is a higher version than `current`.
     /// Versions are dotted numbers ("0.2.0"). A leading "v" and any "-beta" or "+build" suffix
@@ -48,14 +54,20 @@ public enum UpdateCheck {
 
     /// The newest release, from GitHub's `GET /repos/{owner}/{repo}/releases/latest` reply.
     public static func latest(fromReleaseJSON data: Data) -> Latest? {
+        struct Asset: Decodable {
+            let name: String
+            let browser_download_url: String
+        }
         struct Release: Decodable {
             let tag_name: String
             let html_url: String?
+            let assets: [Asset]?
         }
         guard let release = try? JSONDecoder().decode(Release.self, from: data),
               !release.tag_name.isEmpty
         else { return nil }
-        return Latest(version: release.tag_name, url: release.html_url.flatMap { URL(string: $0) })
+        let zip = release.assets?.first { $0.name == appZipName }.flatMap { URL(string: $0.browser_download_url) }
+        return Latest(version: release.tag_name, url: release.html_url.flatMap { URL(string: $0) }, appZip: zip)
     }
 
     /// The version in an app Info.plist. The one on main is what a fresh source build would be,

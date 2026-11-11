@@ -43,6 +43,8 @@ enum UnsitConfig {
     static let repoPage = URL(string: "https://github.com/\(repo)")!
     static let releaseAPI = URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
     static let mainInfoPlist = URL(string: "https://raw.githubusercontent.com/\(repo)/main/Resources/Info.plist")!
+    /// Releases are signed with this Developer ID team. An update is only installed if it is too.
+    static let releaseTeam = "L4ZLV2Y44P"
     /// Steps can also arrive through ntfy.sh, for Macs that aren't signed in to your iCloud.
     /// The shortcut posts to https://ntfy.sh/unsit-<code>; each Mac reads the latest message.
     static let relayServer = "https://ntfy.sh"
@@ -1541,7 +1543,10 @@ struct SettingsMenu: View {
         Menu {
             Toggle("Open at login", isOn: openAtLoginBinding)
             if let latest = updates.available {
-                Button("Update to \(UpdateCheck.display(latest.version))…") { WindowRouter.shared.showSettings(tab: 2) }
+                Button("Update to \(UpdateCheck.display(latest.version))…") {
+                    if latest.appZip != nil { Task { await updates.installUpdate() } }
+                    WindowRouter.shared.showSettings(tab: 2)
+                }
                 Divider()
             }
             Button("Settings…") { WindowRouter.shared.showSettings() }
@@ -1721,11 +1726,17 @@ struct UpdateRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Button("Check for updates") { Task { await updates.check() } }
-                .disabled(updates.status == .checking)
-            if let latest = updates.available {
-                Button("How to update") { showSteps = true }
-                    .popover(isPresented: $showSteps, arrowEdge: .bottom) { UpdateSteps(latest: latest) }
+            if let latest = updates.available, latest.appZip != nil {
+                Button("Update now") { Task { await updates.installUpdate() } }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(updates.installing)
+            } else {
+                Button("Check for updates") { Task { await updates.check() } }
+                    .disabled(updates.status == .checking)
+                if let latest = updates.available {
+                    Button("How to update") { showSteps = true }
+                        .popover(isPresented: $showSteps, arrowEdge: .bottom) { UpdateSteps(latest: latest) }
+                }
             }
             Text(updates.statusText)
                 .font(.system(size: 13, weight: updates.available == nil ? .regular : .semibold))
@@ -1734,7 +1745,7 @@ struct UpdateRow: View {
     }
 }
 
-/// Unsit is built from source, so updating is a pull and a rebuild.
+/// When a release has no app to install, a copy built from source updates with a pull and a rebuild.
 struct UpdateSteps: View {
     let latest: UpdateCheck.Latest
     private let commands = "git pull\nscripts/build-app.sh --open"
@@ -1779,6 +1790,9 @@ final class UpdateChecker: ObservableObject {
     }
 
     @Published private(set) var status: Status = .idle
+    /// Installing an update: nil when idle, otherwise what's happening or what went wrong.
+    @Published private(set) var installStep: String?
+    @Published private(set) var installing = false
     private var timer: Timer?
 
     var currentVersion: String {
@@ -1791,6 +1805,7 @@ final class UpdateChecker: ObservableObject {
     }
 
     var statusText: String {
+        if let step = installStep { return step }
         switch status {
         case .idle: return ""
         case .checking: return "Checking…"
@@ -1829,6 +1844,75 @@ final class UpdateChecker: ObservableObject {
             return
         }
         status = UpdateCheck.isNewer(found.version, than: currentVersion) ? .available(found) : .upToDate
+    }
+
+    /// Downloads the release's Unsit.zip, checks it is signed by the release team,
+    /// puts it in place of this app and reopens it. Settings, goals and today's water are kept.
+    func installUpdate() async {
+        guard !installing, let latest = available, let zip = latest.appZip else { return }
+        installing = true
+        installStep = "Downloading \(UpdateCheck.display(latest.version))…"
+        let target = Bundle.main.bundleURL
+        do {
+            let fresh = try await Self.download(zip)
+            installStep = "Installing…"
+            try await Task.detached { try Self.swapIn(fresh, for: target) }.value
+            installStep = "Reopening…"
+            Self.reopen(target)
+        } catch {
+            installing = false
+            installStep = (error as? UpdateFailure)?.message ?? "The update didn't install. Download it from GitHub."
+        }
+    }
+
+    struct UpdateFailure: Error { let message: String }
+
+    /// The zip, unpacked into a private temporary folder, as the Unsit.app inside it.
+    private static func download(_ url: URL) async throws -> URL {
+        var request = URLRequest(url: url, timeoutInterval: 120)
+        request.setValue("Unsit", forHTTPHeaderField: "User-Agent")
+        let (file, reply) = try await URLSession.shared.download(for: request)
+        guard (reply as? HTTPURLResponse)?.statusCode == 200 else {
+            throw UpdateFailure(message: "Couldn't download the update.")
+        }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Unsit-update-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let unzip = Process()
+        unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        unzip.arguments = ["-x", "-k", file.path, folder.path]
+        try unzip.run()
+        unzip.waitUntilExit()
+        let app = folder.appendingPathComponent("Unsit.app")
+        guard unzip.terminationStatus == 0, FileManager.default.fileExists(atPath: app.path) else {
+            throw UpdateFailure(message: "The download was damaged. Try again.")
+        }
+        return app
+    }
+
+    /// Checks the new app's Developer ID signature, then replaces this one with it.
+    nonisolated private static func swapIn(_ fresh: URL, for target: URL) throws {
+        var code: SecStaticCode?
+        var requirement: SecRequirement?
+        let rule = "anchor apple generic and certificate leaf[subject.OU] = \"\(UnsitConfig.releaseTeam)\""
+        guard SecStaticCodeCreateWithPath(fresh as CFURL, [], &code) == errSecSuccess, let code,
+              SecRequirementCreateWithString(rule as CFString, [], &requirement) == errSecSuccess,
+              SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate),
+                                         requirement) == errSecSuccess
+        else { throw UpdateFailure(message: "The update isn't signed by Unsit's author, so it wasn't installed.") }
+        do {
+            _ = try FileManager.default.replaceItemAt(target, withItemAt: fresh)
+        } catch {
+            throw UpdateFailure(message: "Couldn't replace Unsit in \(target.deletingLastPathComponent().lastPathComponent). Download it from GitHub.")
+        }
+    }
+
+    /// Quits and opens the new copy a moment later, once this one has gone.
+    private static func reopen(_ app: URL) {
+        let later = Process()
+        later.executableURL = URL(fileURLWithPath: "/bin/sh")
+        later.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", app.path]
+        try? later.run()
+        NSApp.terminate(nil)
     }
 
     /// The body of a 200 reply, and whether GitHub answered at all.

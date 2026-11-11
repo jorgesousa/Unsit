@@ -8,7 +8,7 @@
 
 A macOS menu bar app that gets you to 10,000 steps and enough water during the workday. It reads your calendar, finds the gaps between meetings, and tells you when to walk. Your steps arrive from your iPhone and Apple Watch on their own.
 
-[![Version 0.5.6](https://img.shields.io/badge/version-0.5.6-2F7DF6)](Resources/Info.plist)
+[![Version 0.6.0](https://img.shields.io/badge/version-0.6.0-2F7DF6)](Resources/Info.plist)
 [![Download](https://img.shields.io/github/v/release/jorgesousa/Unsit?label=download&color=FF5A1F)](https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg)
 [![License: Sustainable Use 1.0](https://img.shields.io/badge/license-Sustainable%20Use%201.0-8B5CF6)](LICENSE.md)
 [![Build](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml/badge.svg)](https://github.com/jorgesousa/Unsit/actions/workflows/build.yml)
@@ -117,7 +117,7 @@ No nudges during a meeting, while you're away from the Mac (idle for 5 minutes o
 
 The menu bar shows today's steps next to a walking figure. The panel's footer says when steps last arrived from your iPhone, and turns orange when that was more than 90 minutes ago, so you notice if an automation stops. The ↻ button next to it (or ⌘R) checks for new steps and meetings straight away.
 
-**Settings** has three tabs: **General** (workday hours, step and water goals, glass size, how to show the walk nudge, open at login), **iPhone** (when steps last arrived, your code and **Connect with a code…**, choose a steps file by hand, set up the iPhone again) and **Author** (version and **Check for updates**). Unsit checks GitHub once a day for a newer version. When there is one, the gear menu shows **Update to …** and the Author tab shows how to update.
+**Settings** has three tabs: **General** (workday hours, step and water goals, glass size, how to show the walk nudge, open at login), **iPhone** (when steps last arrived, your code and **Connect with a code…**, choose a steps file by hand, set up the iPhone again) and **Author** (version, **Check for updates** and **Update now**). Unsit checks GitHub once a day for a newer version. When there is one, the gear menu shows **Update to …**, which installs it.
 
 ## How it works
 
@@ -204,9 +204,9 @@ The last setup step shows your day on the strip and asks for calendar access. Se
 
 Unsit checks GitHub once a day. When a newer version is out, the gear menu shows **Update to …**.
 
-**Downloaded the app?** Download the new [Unsit.dmg](https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg), quit Unsit and drag the new one over the old one in Applications.
+**Downloaded the app?** Click **Update to …** in the gear menu, or **Update now** in Settings › **Author**. Unsit downloads the new version from GitHub, checks it's signed by its author, replaces itself and reopens. Your goals, workday and today's water are kept. (Copies older than 0.6.0 can't do this yet: download the new [Unsit.dmg](https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg) once and drag it over the old one.)
 
-**Built it yourself?** Settings › **Author** shows these steps:
+**Built it yourself?** The same button works, and swaps your build for the signed release. To stay on your own builds, update from the folder you cloned:
 
 ```bash
 cd Unsit          # the folder you cloned
