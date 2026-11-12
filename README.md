@@ -8,7 +8,7 @@
 
 A macOS menu bar app that gets you to 10,000 steps and enough water during the workday. It reads your calendar, finds the gaps between meetings, and tells you when to walk. Your steps arrive from your iPhone and Apple Watch on their own.
 
-[![Version 0.6.1](https://img.shields.io/badge/version-0.6.1-2F7DF6)](Resources/Info.plist)
+[![Version 0.6.2](https://img.shields.io/badge/version-0.6.2-2F7DF6)](Resources/Info.plist)
 [![Website](https://img.shields.io/badge/website-jorgesousa.github.io%2FUnsit-16181B)](https://jorgesousa.github.io/Unsit/)
 [![Download](https://img.shields.io/github/v/release/jorgesousa/Unsit?label=download&color=FF5A1F)](https://github.com/jorgesousa/Unsit/releases/latest/download/Unsit.dmg)
 [![License: Sustainable Use 1.0](https://img.shields.io/badge/license-Sustainable%20Use%201.0-8B5CF6)](LICENSE.md)

@@ -39,7 +39,7 @@ It plans walking around the user's real calendar: it knows where the gaps are an
 
 ## Brand Commitments
 
-- Name "Unsit", tagline "Your chair can wait."
+- Name "Unsit", tagline "Your chair can wait." Name confirmed by Jorge on 2026-11-12 after a naming review: known overlaps are the iOS app "Unsit: Stand Up Reminder" (same category), "Unsit Treadmill", small GitHub repos named unsit; unsit.com and unsit.app are taken (unsit.net/.org were available). Strongest alternative considered: "Gapwalk". Run a trademark search before any App Store or paid branding move.
 - Voice: calm with dry humour ("Back to back since 9."); plain verbs, specific numbers, sentence case.
 - App design system "A, native premium": graphite #16181B, paper #FBFBFC, mist #CDD1D7 (meetings), signal orange #FF5A1F only for time to move and warnings, water blue #2F7DF6 only for water; SF Pro.
 - App icon `docs/icon.png`. Author: Jorge Sousa (github.com/jorgesousa).
