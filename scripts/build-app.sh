@@ -41,10 +41,10 @@ fi
 
 echo "→ Signing…"
 if [[ -n "${SIGN_IDENTITY:-}" ]]; then
-  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
+  codesign --force --options runtime --timestamp --entitlements Resources/Unsit.entitlements --sign "$SIGN_IDENTITY" "$APP"
   echo "  Signed with: $SIGN_IDENTITY"
 else
-  codesign --force --sign - "$APP"
+  codesign --force --entitlements Resources/Unsit.entitlements --sign - "$APP"
   echo "  Ad-hoc signed (macOS may ask for calendar access again after each rebuild)."
 fi
 

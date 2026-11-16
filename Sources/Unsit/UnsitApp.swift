@@ -860,8 +860,17 @@ final class UnsitModel: ObservableObject {
 
     var walkMinutes: Int {
         let need = isWorkday ? behindBy : max(0, stepGoal - steps)
-        return min(30, max(5, Int((Double(need) / UnsitConfig.stepsPerMinute).rounded(.up))))
+        let wanted = min(30, max(5, Int((Double(need) / UnsitConfig.stepsPerMinute).rounded(.up))))
+        // Never ask for more than fits before the gap closes.
+        if let g = nextGap {
+            let fits = Int(g.end.timeIntervalSince(max(g.start, now)) / 60)
+            return max(1, min(wanted, fits))
+        }
+        return wanted
     }
+
+    /// Steps still behind pace after walking `walkMinutes` (0 when that walk catches you up).
+    var behindAfterWalk: Int { max(0, behindBy - Int(Double(walkMinutes) * UnsitConfig.stepsPerMinute)) }
 
     var currentMeeting: DayEvent? { events.first { $0.start <= now && $0.end > now } }
     var nextMeeting: DayEvent? { events.first { $0.start > now } }
@@ -970,7 +979,8 @@ final class UnsitModel: ObservableObject {
         if let m = nextMeeting, let g = nextGap, m.start <= g.end.addingTimeInterval(60) {
             s += " before \(m.name)"
         }
-        return s + " and you're back on pace."
+        let left = behindAfterWalk
+        return left > 0 ? s + " and you'll be \(left.formatted()) behind pace." : s + " and you're back on pace."
     }
 
     var nudgeTitle: String {
@@ -980,7 +990,8 @@ final class UnsitModel: ObservableObject {
 
     var nudgeDetail: String {
         behindBy > 0
-            ? "You're \(behindBy.formatted()) behind pace. Walk \(walkMinutes) minutes now and you're back on track."
+            ? "You're \(behindBy.formatted()) behind pace. Walk \(walkMinutes) minutes now"
+                + (behindAfterWalk > 0 ? " to catch up \((behindBy - behindAfterWalk).formatted())." : " and you're back on track.")
             : "A short walk now keeps you on pace."
     }
 
@@ -1143,7 +1154,8 @@ struct DayStrip: View {
                         }
                     }
                     ForEach(model.freeGaps.filter { $0.end > model.now }, id: \.start) { g in
-                        let isNext = g.start == model.nextGap?.start && !model.goalReached
+                        // nextGap starts at "now" when it's open, so match on the end, which both share.
+                        let isNext = g.end == model.nextGap?.end && !model.goalReached
                         let x0 = model.fraction(of: max(g.start, model.now)) * w
                         let x1 = model.fraction(of: g.end) * w
                         if x1 - x0 > 3 {
